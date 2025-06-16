@@ -26,47 +26,147 @@ module.exports = (pool) => {
     const nodeId = parseInt(req.params.id, 10);
     const { newType } = req.body;
     const client = await pool.connect(); // Acquire client
+    const nodeA_ID = nodeId; // Renaming for clarity in merge logic (nodeId is NodeA_ID)
   
     try {
       await client.query('BEGIN'); // Start transaction
 
-      // Check if another node with the same name and type already exists
-      // Lock the row being checked against to prevent its name from changing during the transaction
-      // Also lock potential duplicates to prevent them from being deleted or their type changed.
-      const { rows } = await client.query(`
-        SELECT n.id
-        FROM "DM"."nodes" n
-        LEFT JOIN "DM"."nodes" current_node ON current_node.id = $1
-        WHERE n.id != $1
-          AND LOWER(n.name) = LOWER(current_node.name)
-          AND n.type = $2
-        FOR UPDATE OF n, current_node
-      `, [nodeId, newType]);
-  
-      if (rows.length > 0) {
-        await client.query('ROLLBACK'); // Duplicate found, rollback
-        return res.status(409).json({ error: 'A node with this name and type already exists.' });
-      }
-  
-      // If no duplicate, proceed to update
-      const updateResult = await client.query(`
-        UPDATE "DM"."nodes"
-        SET type = $1
-        WHERE id = $2
-      `, [newType, nodeId]);
-
-      if (updateResult.rowCount === 0) {
-        // This means the node with nodeId was not found, perhaps deleted concurrently
+      // Get Node A's current name. We need this to find Node B.
+      // Lock Node A for the duration of the transaction.
+      const nodeARes = await client.query(
+        `SELECT name FROM "DM"."nodes" WHERE id = $1 FOR UPDATE`,
+        [nodeA_ID]
+      );
+      if (nodeARes.rows.length === 0) {
         await client.query('ROLLBACK');
-        return res.status(404).json({ error: 'Node not found for update.' });
+        return res.status(404).json({ error: 'Node to update (Node A) not found.' });
       }
+      const nodeA_Name = nodeARes.rows[0].name;
+
+      // Check if Node B (target for merge) exists: same name (case-insensitive) as Node A, but with the newType.
+      // Lock Node B as well if it exists.
+      const nodeBRes = await client.query(`
+        SELECT id FROM "DM"."nodes"
+        WHERE id != $1
+          AND LOWER(name) = LOWER($2)
+          AND type = $3
+        FOR UPDATE
+      `, [nodeA_ID, nodeA_Name, newType]);
   
-      await client.query('COMMIT'); // Commit successful transaction
-      res.json({ success: true });
+      if (nodeBRes.rows.length > 0) {
+        // Node B exists, proceed with MERGE logic
+        const nodeB_ID = nodeBRes.rows[0].id;
+
+        // 1. Update DM.note_mentions
+        // All mentions pointing to NodeA_ID should now point to NodeB_ID and have the newType
+        await client.query(
+          `UPDATE "DM"."note_mentions" SET node_id = $1, mention_type = $2 WHERE node_id = $3`,
+          [nodeB_ID, newType, nodeA_ID]
+        );
+
+        // 2. Update DM.node_links (Source relationships: NodeA -> X  becomes NodeB -> X)
+        // Get all targets linked from Node A
+        const sourceLinksRes = await client.query(
+            `SELECT target_node_id FROM "DM"."node_links" WHERE source_node_id = $1`,
+            [nodeA_ID]
+        );
+        for (const row of sourceLinksRes.rows) {
+            const target_node_id = row.target_node_id;
+            // If target is Node B itself, this link will become a self-loop on Node B later, handle by delete self-loops
+            if (target_node_id === nodeB_ID) continue;
+
+            // Check if Node B already links to this target
+            const existingLinkToTargetRes = await client.query(
+                `SELECT 1 FROM "DM"."node_links" WHERE source_node_id = $1 AND target_node_id = $2`,
+                [nodeB_ID, target_node_id]
+            );
+            if (existingLinkToTargetRes.rows.length > 0) {
+                // Conflict: Node B already links to this target. Delete Node A's link.
+                await client.query(
+                    `DELETE FROM "DM"."node_links" WHERE source_node_id = $1 AND target_node_id = $2`,
+                    [nodeA_ID, target_node_id]
+                );
+            }
+        }
+        // Update remaining source links from Node A to Node B
+        await client.query(
+          `UPDATE "DM"."node_links" SET source_node_id = $1 WHERE source_node_id = $2`,
+          [nodeB_ID, nodeA_ID]
+        );
+
+        // 3. Update DM.node_links (Target relationships: X -> NodeA becomes X -> NodeB)
+        // Get all sources linking to Node A
+        const targetLinksRes = await client.query(
+            `SELECT source_node_id FROM "DM"."node_links" WHERE target_node_id = $1`,
+            [nodeA_ID]
+        );
+        for (const row of targetLinksRes.rows) {
+            const source_node_id = row.source_node_id;
+             // If source is Node B itself, this link will become a self-loop on Node B later, handle by delete self-loops
+            if (source_node_id === nodeB_ID) continue;
+
+            // Check if this source already links to Node B
+            const existingLinkFromSourceRes = await client.query(
+                `SELECT 1 FROM "DM"."node_links" WHERE source_node_id = $1 AND target_node_id = $2`,
+                [source_node_id, nodeB_ID]
+            );
+            if (existingLinkFromSourceRes.rows.length > 0) {
+                // Conflict: This source already links to Node B. Delete Node A's incoming link.
+                await client.query(
+                    `DELETE FROM "DM"."node_links" WHERE target_node_id = $1 AND source_node_id = $2`,
+                    [nodeA_ID, source_node_id]
+                );
+            }
+        }
+        // Update remaining target links from Node A to Node B
+        await client.query(
+          `UPDATE "DM"."node_links" SET target_node_id = $1 WHERE target_node_id = $2`,
+          [nodeB_ID, nodeA_ID]
+        );
+
+        // 4. Delete self-loops on Node B that might have been created
+        await client.query(
+          `DELETE FROM "DM"."node_links" WHERE source_node_id = $1 AND target_node_id = $1`,
+          [nodeB_ID]
+        );
+
+        // 5. Delete Node A
+        await client.query(`DELETE FROM "DM"."nodes" WHERE id = $1`, [nodeA_ID]);
+
+        await client.query('COMMIT');
+        res.json({
+            success: true,
+            merged: true,
+            target_node_id: nodeB_ID, // ID of the node NodeA was merged into
+            message: `Node ${nodeA_Name} (ID: ${nodeA_ID}) type changed to ${newType} and merged into existing Node ID: ${nodeB_ID}.`
+        });
+
+      } else {
+        // Node B does not exist, just UPDATE Node A's type (original logic)
+        const updateResult = await client.query(
+          `UPDATE "DM"."nodes" SET type = $1 WHERE id = $2`,
+          [newType, nodeA_ID]
+        );
+
+        if (updateResult.rowCount === 0) {
+          // This case should ideally be caught by the initial fetch of Node A's name,
+          // but as a safeguard if Node A was deleted between the name fetch and this update.
+          await client.query('ROLLBACK');
+          return res.status(404).json({ error: 'Node not found for update.' });
+        }
+
+        await client.query('COMMIT');
+        res.json({
+            success: true,
+            merged: false,
+            updated_node_id: nodeA_ID,
+            message: "Node type updated successfully."
+        });
+      }
     } catch (err) {
       await client.query('ROLLBACK'); // Rollback on any error
-      console.error('🔥 Failed to update type error:', err);
-      res.status(500).json({ error: 'Failed to update node type', message: err.message });
+      console.error('🔥 Failed to update node type / merge node:', err);
+      res.status(500).json({ error: 'Failed to update node type / merge node', message: err.message });
     } finally {
       if (client) {
         client.release(); // Release client

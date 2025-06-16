@@ -15,6 +15,7 @@ const NodePage = () => {
   // State for correction modal
   const [editingMention, setEditingMention] = useState(null);
   const [newMentionType, setNewMentionType] = useState('');
+  const [editedMentionName, setEditedMentionName] = useState(''); // New state for edited name
   const mentionTypes = ['PERSON', 'LOCATION', 'ITEM', 'SPELL', 'MONSTER', 'OTHER']; // Available types
 
   useEffect(() => {
@@ -51,11 +52,24 @@ const NodePage = () => {
 
   const handleTypeChange = async () => {
     try {
-      await apiClient.patch(`/nodes/${nodeId}/type`, { newType }); // Use apiClient, relative URL
-      setNode(prev => ({ ...prev, type: newType }));
-      setIsEditingType(false);
+      const response = await apiClient.patch(`/nodes/${nodeId}/type`, { newType });
+      setIsEditingType(false); // Close editing UI first
+
+      if (response.data.merged === true) {
+        alert(response.data.message || `Node type changed and merged into Node ID: ${response.data.target_node_id}. You will be redirected.`);
+        navigate(`/node/${response.data.target_node_id}`);
+        // The useEffect for [nodeId] will re-fetch data for the new target_node_id page
+      } else {
+        // Simple update, NodeId remains the same
+        setNode(prev => ({ ...prev, type: newType })); // Update local state
+        alert(response.data.message || 'Node type updated successfully!');
+      }
     } catch (err) {
       console.error('Failed to update node type:', err);
+      alert('Failed to update node type: ' + (err.response?.data?.error || err.message));
+      // Optionally, if the error was 404 because the current node was deleted (e.g. by another user)
+      // you might want to navigate away or show a specific message.
+      // For now, just log and alert.
     }
   };
 
@@ -92,38 +106,69 @@ const NodePage = () => {
   const handleOpenEditModal = (mention) => {
     setEditingMention(mention);
     setNewMentionType(mention.mention_type);
+    setEditedMentionName(mention.snippet || ''); // Initialize with current snippet or empty string
   };
 
   const handleCloseModal = () => {
     setEditingMention(null);
     setNewMentionType('');
+    setEditedMentionName(''); // Reset edited name
   };
 
   const handleSaveCorrection = async () => {
-    if (!editingMention || !newMentionType) return;
+    if (!editingMention || !newMentionType || !editedMentionName.trim()) {
+        alert("Mention text and type cannot be empty.");
+        return;
+    }
 
     const payload = {
+      new_name_segment: editedMentionName.trim(), // Use the edited name
       new_type: newMentionType,
       note_id: editingMention.note_id,
-      original_text_segment: editingMention.snippet || editingMention.node_name, // Assuming snippet is preferred if available
+      original_text_segment: editingMention.snippet || editingMention.node_name,
       original_mention_type: editingMention.mention_type,
       original_source: editingMention.source,
       original_confidence: editingMention.confidence,
-      start_pos: editingMention.start_pos, // Assuming span doesn't change for type-only correction for now
+      // If new_name_segment is different, start_pos/end_pos might ideally be updated.
+      // For this iteration, we pass original start/end_pos. The backend might adjust them
+      // or a more sophisticated UI would allow span editing.
+      // For now, we'll assume the backend uses the new_name_segment to find/create the node,
+      // and the existing start/end_pos are primarily for logging or if the segment text is unchanged.
+      // The backend POST /mentions/:mentionId/correct is set to update start/end if provided,
+      // but here we are not providing new ones if only text/type changes.
+      // If text changes, start/end pos in the note *should* change. This is a complex part.
+      // For now, we'll send the original start/end_pos, implying the correction is about the *node* it points to,
+      // or the *type* of the existing span. If the text itself changes, the span *must* be re-evaluated.
+      // This subtask focuses on allowing text edit in modal, implying the node's name changes.
+      // The backend will handle node creation/lookup with 'new_name_segment'.
+      // The existing mention's span (start_pos, end_pos) in the note will remain, but will point to a new/different node.
+      start_pos: editingMention.start_pos,
       end_pos: editingMention.end_pos,
-      // new_name_segment could be added if we allow text editing in the modal
     };
 
     try {
       const response = await apiClient.post(`/mentions/${editingMention.id}/correct`, payload);
-      const updatedMentionFromServer = response.data.updated_mention;
+      const { updated_mention } = response.data; // Destructure for clarity
 
       setMentions(prevMentions =>
-        prevMentions.map(m =>
-          m.id === editingMention.id
-            ? { ...updatedMentionFromServer, snippet: m.snippet, note_content: m.note_content } // Preserve snippet & content if not returned
-            : m
-        )
+        prevMentions.map(m => {
+          if (m.id === editingMention.id) {
+            // Update with data from server, ensure local display text (snippet) reflects the change
+            return {
+              ...m, // Keep some original fields if not returned by backend e.g. note_content
+              node_id: updated_mention.node_id,
+              mention_type: updated_mention.mention_type,
+              source: updated_mention.source,
+              confidence: updated_mention.confidence,
+              snippet: editedMentionName.trim(), // Crucially, update the displayed snippet to the edited name
+              start_pos: updated_mention.start_pos, // Update if backend returns modified ones
+              end_pos: updated_mention.end_pos,
+               // If backend sends back the node name linked to node_id:
+              // node_name: updated_mention.node_name (or similar) could also be used for snippet.
+            };
+          }
+          return m;
+        })
       );
       handleCloseModal();
     } catch (error) {
@@ -221,25 +266,35 @@ const NodePage = () => {
         <div className="modal-backdrop">
           <div className="modal-content">
             <h3>Correct Mention</h3>
-            <p><strong>Text:</strong> "{editingMention.snippet || editingMention.node_name}"</p>
-            <p><strong>Current Type:</strong> {formatType(editingMention.mention_type)}</p>
-            <p><em>(Source: {editingMention.source}, Confidence: {editingMention.confidence?.toFixed(2)})</em></p>
+            <div style={{ marginBottom: '10px' }}>
+              <label htmlFor="editedMentionName" style={{ display: 'block', marginBottom: '5px' }}>Mention Text: </label>
+              <input
+                type="text"
+                id="editedMentionName"
+                value={editedMentionName}
+                onChange={(e) => setEditedMentionName(e.target.value)}
+                style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+              />
+            </div>
 
-            <div>
-              <label htmlFor="newMentionType">New Type: </label>
+            <div style={{ marginBottom: '10px' }}>
+              <label htmlFor="newMentionType" style={{ display: 'block', marginBottom: '5px' }}>New Type: </label>
               <select
                 id="newMentionType"
                 value={newMentionType}
                 onChange={(e) => setNewMentionType(e.target.value)}
+                style={{ width: '100%', padding: '8px' }}
               >
                 {mentionTypes.map(type => (
                   <option key={type} value={type}>{formatType(type)}</option>
                 ))}
               </select>
             </div>
+            <p><em>Original Type: {formatType(editingMention.mention_type)} (Source: {editingMention.source}, Confidence: {editingMention.confidence?.toFixed(2)})</em></p>
+
 
             <div className="modal-actions">
-              <button onClick={handleSaveCorrection} className="button">Save Change</button>
+              <button onClick={handleSaveCorrection} className="button" disabled={!editedMentionName.trim()}>Save Change</button>
               <button onClick={handleDeleteMentionInModal} className="button button-danger">Delete Mention</button>
               <button onClick={handleCloseModal} className="button button-secondary">Cancel</button>
             </div>
