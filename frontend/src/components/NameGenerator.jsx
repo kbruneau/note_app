@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import apiClient from '../services/apiClient'; // Import apiClient
 
 const NameGenerator = () => {
   const [options, setOptions] = useState({});
@@ -8,7 +8,7 @@ const NameGenerator = () => {
   const [generatedName, setGeneratedName] = useState(null);
 
   useEffect(() => {
-    axios.get('http://localhost:4000/api/name-options')
+    apiClient.get('/name-options') // Use apiClient, relative URL
       .then(res => setOptions(res.data))
       .catch(err => console.error(err));
   }, []);
@@ -16,7 +16,7 @@ const NameGenerator = () => {
   const handleGenerate = () => {
     if (!selectedRace || !selectedOption) return;
 
-    axios.get('http://localhost:4000/api/random-name', {
+    apiClient.get('/random-name', { // Use apiClient, relative URL
       params: { race: selectedRace, option: selectedOption }
     })
       .then(res => setGeneratedName(res.data))

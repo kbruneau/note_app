@@ -25,29 +25,52 @@ module.exports = (pool) => {
   router.patch('/nodes/:id/type', async (req, res) => {
     const nodeId = parseInt(req.params.id, 10);
     const { newType } = req.body;
+    const client = await pool.connect(); // Acquire client
   
     try {
+      await client.query('BEGIN'); // Start transaction
+
       // Check if another node with the same name and type already exists
-      const { rows } = await pool.query(`
-        SELECT id FROM "DM"."nodes"
-        WHERE id != $1 AND LOWER(name) = LOWER((SELECT name FROM "DM"."nodes" WHERE id = $1)) AND type = $2
+      // Lock the row being checked against to prevent its name from changing during the transaction
+      // Also lock potential duplicates to prevent them from being deleted or their type changed.
+      const { rows } = await client.query(`
+        SELECT n.id
+        FROM "DM"."nodes" n
+        LEFT JOIN "DM"."nodes" current_node ON current_node.id = $1
+        WHERE n.id != $1
+          AND LOWER(n.name) = LOWER(current_node.name)
+          AND n.type = $2
+        FOR UPDATE OF n, current_node
       `, [nodeId, newType]);
   
       if (rows.length > 0) {
+        await client.query('ROLLBACK'); // Duplicate found, rollback
         return res.status(409).json({ error: 'A node with this name and type already exists.' });
       }
   
       // If no duplicate, proceed to update
-      await pool.query(`
+      const updateResult = await client.query(`
         UPDATE "DM"."nodes"
         SET type = $1
         WHERE id = $2
       `, [newType, nodeId]);
+
+      if (updateResult.rowCount === 0) {
+        // This means the node with nodeId was not found, perhaps deleted concurrently
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Node not found for update.' });
+      }
   
+      await client.query('COMMIT'); // Commit successful transaction
       res.json({ success: true });
     } catch (err) {
-      console.error('Failed to update type error:', err);
-      res.status(500).json({ error: 'Failed to update node type' });
+      await client.query('ROLLBACK'); // Rollback on any error
+      console.error('🔥 Failed to update type error:', err);
+      res.status(500).json({ error: 'Failed to update node type', message: err.message });
+    } finally {
+      if (client) {
+        client.release(); // Release client
+      }
     }
   });
   

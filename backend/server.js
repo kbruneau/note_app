@@ -8,11 +8,11 @@ app.use(cors());
 app.use(express.json());
 
 const pool = new Pool({
-  user: 'postgres',
-  password: 'Paisley95',
-  host: '32.220.174.183',
-  port: 5432,
-  database: 'dnd_app',
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  host: process.env.DB_HOST,
+  port: process.env.DB_PORT,
+  database: process.env.DB_NAME,
 });
 
 // Route modules

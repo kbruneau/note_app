@@ -27,27 +27,34 @@ module.exports = (pool) => {
       return res.status(400).json({ error: 'Missing name or type' });
     }
 
+    const client = await pool.connect(); // Acquire client
     try {
+      await client.query('BEGIN'); // Start transaction
+
       // Step 1: Retrieve node ID
-      const { rows: nodeRows } = await pool.query(
-        `SELECT id FROM "DM"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2 LIMIT 1`,
+      const { rows: nodeRows } = await client.query(
+        `SELECT id FROM "DM"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2 LIMIT 1 FOR UPDATE`, // Added FOR UPDATE
         [name, type]
       );
       if (nodeRows.length === 0) {
+        await client.query('ROLLBACK'); // Node not found, rollback
+        client.release();
         return res.status(404).json({ error: 'Node not found' });
       }
       const nodeId = nodeRows[0].id;
 
       // Step 2: Get all relevant notes
-      const { rows: notes } = await pool.query(
+      const { rows: notes } = await client.query(
         `SELECT id, content FROM "DM"."notes" WHERE content ILIKE '%' || $1 || '%'`,
         [name]
       );
       if (notes.length === 0) {
+        await client.query('COMMIT'); // No notes to process, commit (or rollback, depending on desired behavior)
+        client.release();
         return res.json({ success: true, mentionsAdded: 0 });
       }
 
-      // Step 3: Match words
+      // Step 3: Match words (No DB interaction, so outside explicit transaction steps if complex)
       const safeName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       const regex = new RegExp(`\\b${safeName}\\b`, 'gi');
 
@@ -64,12 +71,14 @@ module.exports = (pool) => {
       }
 
       if (newMentions.length === 0) {
+        await client.query('COMMIT'); // No new mentions found
+        client.release();
         return res.json({ success: true, mentionsAdded: 0 });
       }
 
       // Step 4: Get existing mentions for this node
-      const { rows: existing } = await pool.query(
-        `SELECT note_id, start_pos, end_pos FROM "DM"."note_mentions" WHERE node_id = $1`,
+      const { rows: existing } = await client.query(
+        `SELECT note_id, start_pos, end_pos FROM "DM"."note_mentions" WHERE node_id = $1 FOR UPDATE`, // Added FOR UPDATE
         [nodeId]
       );
       const existingSet = new Set(existing.map(e => `${e.note_id}:${e.start_pos}:${e.end_pos}`));
@@ -79,6 +88,8 @@ module.exports = (pool) => {
       );
 
       if (filteredMentions.length === 0) {
+        await client.query('COMMIT'); // No new mentions to add after filtering
+        client.release();
         return res.json({ success: true, mentionsAdded: 0 });
       }
 
@@ -91,16 +102,22 @@ module.exports = (pool) => {
         insertParams.push(m.note_id, m.start_pos, m.end_pos, type);
       });
 
-      await pool.query(
+      await client.query(
         `INSERT INTO "DM"."note_mentions" (node_id, note_id, start_pos, end_pos, mention_type)
          VALUES ${insertValues}`,
         insertParams
       );
 
+      await client.query('COMMIT'); // Commit successful transaction
       res.json({ success: true, mentionsAdded: filteredMentions.length });
     } catch (err) {
-      console.error('Retag error:', err);
+      await client.query('ROLLBACK'); // Rollback on any error
+      console.error('🔥 Retag error:', err);
       res.status(500).json({ error: 'Server error', message: err.message });
+    } finally {
+      if (client) {
+        client.release(); // Release client
+      }
     }
   });
 
