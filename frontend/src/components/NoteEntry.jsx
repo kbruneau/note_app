@@ -23,7 +23,7 @@ const NoteEntry = () => {
   };
 
   return (
-    <div style={{ padding: '1rem', maxWidth: '600px', margin: '0 auto' }}>
+    <div className="form-page-container"> {/* Applied class, removed inline styles */}
       <h2>Session Notes</h2>
       <textarea
         rows={5}
@@ -37,7 +37,7 @@ const NoteEntry = () => {
       </button>
 
       {response?.success && (
-        <div style={{ marginTop: '1rem' }}>
+        <div className="tagged-entities-list"> {/* Applied class for this section */}
           <h3>Tagged Entities</h3>
           {response.nodes?.length > 0 ? (
             response.nodes.map(n => (

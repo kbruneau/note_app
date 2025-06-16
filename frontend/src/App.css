@@ -1,68 +1,347 @@
+/* === Root Variables === */
+:root {
+  --parchment-bg-image: url('./assets/parchment-texture.png');
+  --parchment-bg-color: #F5DEB3; /* Wheat */
+  --parchment-bg-color-rgb: 245,222,179; /* For use in rgba() */
+  --text-color-main: #5D4037;    /* Dark Brown */
+  --text-color-headers: #4A2A2A; /* Darker Sepia-like Brown for headers */
+  --accent-color-primary: #8B4513; /* SaddleBrown */
+  --accent-color-secondary: #A0522D; /* Sienna */
+  --border-color: #C6A971; /* A slightly darker, desaturated parchment/tan */
+  --container-bg-color: rgba(240, 230, 210, 0.85);
+  --container-bg-opaque: #F0E6D2;
+  --input-bg-color: rgba(255, 255, 255, 0.75);
+  --link-color: #795548;
+  --link-hover-color: #9C6B58;
+  --navbar-active-tab-bg: #D1C4B0; /* Darker tan for active tab */
+  --font-family-body: "Georgia", serif;
+  --font-family-headings: "Garamond", "Palatino Linotype", "Book Antiqua", Palatino, serif;
+  --font-family-cinzel: "Cinzel", serif;
+  --font-family-ebgaramond: "EB Garamond", serif;
+}
+
 /* === Global Base === */
 body {
   margin: 0;
   padding: 0;
-  background-color: #f5e6c8;
-  color: #3e2e1e;
-  font-family: 'EB Garamond', serif;
-  background-image: url('./assets/parchment-texture.png');
-  background-size: cover;
-  background-attachment: fixed;
+  font-family: var(--font-family-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-image: var(--parchment-bg-image);
+  background-color: var(--parchment-bg-color);
+  background-repeat: repeat;
+  color: var(--text-color-main);
+  line-height: 1.6;
+}
+
+/* === Layout === */
+.app-container {
   display: flex;
+  min-height: 100vh;
 }
 
 .app-wrapper {
-  flex: 1;
-  padding: 2rem 2rem 2rem 2rem;
-  padding-right: 300px; /* reserve space for sidebar */
+  flex-grow: 1;
+  padding: 1rem 2rem;
+  margin-right: 300px;
+  max-width: calc(100% - 300px);
+  overflow-y: auto;
 }
 
-/* === Right Sidebar for Player Character Panel === */
+/* === Page Header Banner (HomePage Top Section) === */
+.page-header-banner {
+  background-color: var(--container-bg-opaque);
+  padding: 1em 2em; /* Adjusted padding */
+  margin: -1rem -2rem 1.5rem -2rem; /* Extend to edges of .app-wrapper padding, then space below */
+  border-bottom: 1px solid var(--border-color);
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.page-header-banner .entity-header { /* Specifically for HomePage title within banner */
+  text-align: center;
+  margin-top: 0; /* Remove top margin if it's the first element in banner */
+  margin-bottom: 0.75rem; /* Space between title and navbar */
+  font-weight: bold; /* Ensure it's bold */
+}
+
+
+/* === General Content Pane for secondary pages === */
+.content-pane {
+  background-color: var(--container-bg-opaque);
+  border-radius: 8px;
+  padding: 2em;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+  margin: 2rem auto;
+  max-width: 800px;
+}
+.content-pane h2 {
+  font-family: var(--font-family-cinzel);
+  color: var(--text-color-headers);
+  font-size: 1.8rem;
+  text-align: center;
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.5rem;
+}
+.content-pane label {
+  font-family: var(--font-family-headings);
+  color: var(--text-color-main);
+  display: block;
+  margin-top: 1rem;
+  margin-bottom: 0.3rem;
+  font-size: 1rem;
+}
+.content-pane .button-row,
+.content-pane form > button,
+.content-pane > button {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: flex-start;
+}
+.content-pane form > button,
+.content-pane > button {
+  margin-right: 0;
+}
+
+
+/* === Headings === */
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-family-headings);
+  color: var(--text-color-headers);
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+}
+.entity-header { /* General class for entity headers (like NodePage title) */
+  font-family: var(--font-family-cinzel);
+  font-size: 2rem;
+  margin-bottom: 0.5rem;
+  color: var(--text-color-headers);
+  /* text-align: center; -- Removed from general, applied to banner specific */
+}
+.node-page-mentions-header {
+  font-family: var(--font-family-headings);
+  font-size: 1.5rem;
+  color: var(--text-color-headers);
+  margin-top: 2em;
+  margin-bottom: 1em;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.3em;
+}
+
+
+/* === Links === */
+a {
+  color: var(--link-color);
+  text-decoration: none;
+}
+a:hover, a:focus {
+  color: var(--link-hover-color);
+  text-decoration: underline;
+}
+.entity-link {
+  color: var(--link-color);
+  text-decoration: none;
+  font-weight: bold;
+  font-family: var(--font-family-ebgaramond);
+}
+.entity-link:hover, .entity-link:focus {
+  color: var(--link-hover-color);
+  text-decoration: underline;
+}
+
+/* === Buttons === */
+button,
+input[type="submit"],
+input[type="button"],
+.button {
+  font-family: var(--font-family-headings);
+  font-size: 1rem;
+  background-color: var(--accent-color-primary);
+  color: var(--parchment-bg-color);
+  border: 1px solid var(--accent-color-secondary);
+  padding: 0.5em 1em;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+  margin-right: 0.5rem;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.1s ease;
+  text-align: center;
+}
+button:hover,
+input[type="submit"]:hover,
+input[type="button"]:hover,
+.button:hover {
+  background-color: var(--accent-color-secondary);
+  box-shadow: 0 3px 7px rgba(0,0,0,0.2);
+}
+button:active,
+input[type="submit"]:active,
+input[type="button"]:active,
+.button:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+button:disabled,
+input[type="submit"]:disabled,
+input[type="button"]:disabled,
+.button:disabled {
+  background-color: #cccccc;
+  color: #666666;
+  cursor: not-allowed;
+  border-color: #aaaaaa;
+  box-shadow: none;
+}
+
+/* === Input Fields & Textareas === */
+input[type="text"],
+input[type="search"],
+input[type="email"],
+input[type="password"],
+select,
+textarea {
+  font-family: var(--font-family-body);
+  font-size: 1rem;
+  color: var(--text-color-main);
+  background-color: var(--input-bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0.5em;
+  width: 100%;
+  box-sizing: border-box;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+input[type="text"]:focus,
+input[type="search"]:focus,
+input[type="email"]:focus,
+input[type="password"]:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: var(--accent-color-primary);
+  box-shadow: 0 0 5px rgba(139, 69, 19, 0.5);
+}
+textarea {
+  resize: vertical;
+  min-height: 80px;
+}
+select {
+  appearance: none;
+  background-image: url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%22292.4%22%20height%3D%22292.4%22%3E%3Cpath%20fill%3D%22%235D4037%22%20d%3D%22M287%2069.4a17.6%2017.6%200%200%200-13-5.4H18.4c-5%200-9.3%201.8-12.9%205.4A17.6%2017.6%200%200%200%200%2082.2c0%205%201.8%209.3%205.4%2012.9l128%20127.9c3.6%203.6%207.8%205.4%2012.8%205.4s9.2-1.8%2012.8-5.4L287%2095c3.5-3.5%205.4-7.8%205.4-12.8%200-5-1.9-9.2-5.4-12.9z%22%2F%3E%3C%2Fsvg%3E');
+  background-repeat: no-repeat;
+  background-position: right .7em top 50%;
+  background-size: .65em auto;
+  padding-right: 2.5em;
+}
+
+/* === Navbar Tabs === */
+.navbar { /* Assumed to be inside .page-header-banner */
+  display: flex;
+  justify-content: center; /* Center tabs within the banner */
+  gap: 0.5rem;
+  /* margin-bottom: 1.5rem; -- Removed, banner handles bottom margin */
+  /* padding-bottom: 0.5rem; -- Removed, banner handles padding */
+  /* border-bottom: 1px solid var(--border-color); -- Removed, banner has border */
+  flex-wrap: wrap;
+  background-color: transparent; /* Ensure navbar itself is transparent if inside banner */
+}
+.navbar button {
+  font-family: var(--font-family-headings);
+  background-color: var(--container-bg-opaque); /* Inactive tabs light tan */
+  color: var(--text-color-main); /* Brown font for inactive */
+  border: 1px solid var(--border-color);
+  border-bottom-color: transparent; /* To connect with banner or active tab content area */
+  border-radius: 6px 6px 0 0;
+  padding: 0.6em 1em;
+  box-shadow: none;
+  margin-right: 0;
+  transition: background-color 0.2s ease, color 0.2s ease; /* Added color transition */
+}
+.navbar button:hover {
+  background-color: var(--navbar-active-tab-bg); /* Use new var for hover */
+  color: var(--text-color-headers); /* Darker text on hover */
+  box-shadow: none;
+}
+.navbar button.active {
+  background-color: var(--navbar-active-tab-bg); /* Use new var */
+  color: var(--text-color-headers); /* Darker text for active */
+  border-color: var(--border-color);
+  border-bottom-color: var(--navbar-active-tab-bg); /* Merge with content area of same color */
+  position: relative;
+  top: 1px; /* Lifts it slightly to merge with potential border below navbar */
+  /* box-shadow: 0 -2px 5px rgba(0,0,0,0.05) inset; -- Keeping existing shadow if desired */
+  font-weight: bold; /* Make active tab text bolder */
+}
+
+/* === Note Cards / Entity List Items === */
+.note-card,
+.entity-list li {
+  background: var(--container-bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1em;
+  margin-bottom: 1em;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+.entity-list { list-style: none; padding: 0; margin-top: 1rem; }
+
+.note-card.highlighted {
+  border: 2px solid var(--accent-color-primary);
+  background-color: #fff5db;
+  box-shadow: 0 0 6px rgba(161, 118, 66, 0.4);
+}
+
+/* === PC Sidebar === */
 .pc-sidebar {
   position: fixed;
   top: 0;
   right: 0;
   width: 280px;
   height: 100vh;
-  background-color: #f4debc;
-  border-left: 2px solid #7b4b1d;
-  padding: 1rem;
-  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
+  background-color: var(--container-bg-opaque);
+  border-left: 1px solid var(--border-color);
+  padding: 1em;
+  box-shadow: -3px 0 10px rgba(0, 0, 0, 0.1);
   overflow-y: auto;
   z-index: 998;
+  border-radius: 8px 0 0 8px;
 }
-
 .pc-sidebar h3 {
-  font-family: 'Cinzel', serif;
-  font-size: 1.2rem;
+  font-family: var(--font-family-cinzel);
+  font-size: 1.3em;
+  margin-top: 0.5em;
   margin-bottom: 1rem;
-  color: #3e2e1e;
+  color: var(--text-color-headers);
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.3em;
 }
-
 .pc-tile {
-  background: #fff8e7;
-  border: 1px solid #c4a060;
+  background: rgba(245, 222, 179, 0.3);
+  border: 1px solid var(--border-color);
   border-radius: 6px;
   padding: 0.75rem;
   margin-bottom: 1rem;
-  box-shadow: 1px 1px 4px rgba(0,0,0,0.1);
+  box-shadow: none;
 }
-
 .pc-tile h4 {
-  margin: 0;
-  font-family: 'Cinzel', serif;
+  margin: 0 0 0.25em 0;
+  font-family: var(--font-family-cinzel);
   font-size: 1rem;
-  color: #3e2e1e;
+  color: var(--text-color-headers);
 }
-
-.pc-tile small {
-  display: block;
-  font-size: 0.85rem;
-  color: #7b4b1d;
+.pc-tile small.tag {
+  display: inline-block;
+  font-size: 0.75rem;
+  color: var(--parchment-bg-color);
   margin-top: 0.25rem;
+  padding: 0.1em 0.5em;
+  border-radius: 4px;
 }
+.tag.pc { background: var(--accent-color-primary); }
+.tag.party { background: var(--accent-color-secondary); }
 
-/* === Entity Tags === */
+/* === Entity Tags (General) === */
 .tag {
   display: inline-block;
   padding: 2px 8px;
@@ -71,224 +350,355 @@ body {
   margin-right: 4px;
   font-weight: bold;
   font-size: 0.85rem;
+  font-family: var(--font-family-body);
 }
-
 .tag.person { color: #9d2b2b; }
 .tag.place  { color: #3b4b9d; }
 .tag.item   { color: #2e7d32; }
 .tag.spell  { color: #6a1b9a; }
 .tag.monster { color: #4e342e; }
-.tag.pc { background: #9d2b2b; color: #fff8e7; }
-.tag.party { background: #7c4a19; color: #fff8e7; }
 
 /* === FAB === */
 .fab {
   position: fixed;
   bottom: 20px;
-  right: 20px;
+  right: 300px;
+  margin-right: 20px;
   width: 60px;
   height: 60px;
   border-radius: 50%;
-  background-color: #7b4b1d;
+  background-color: var(--accent-color-primary);
   color: #fff;
   font-size: 2rem;
-  border: none;
+  border: 1px solid var(--accent-color-secondary);
   box-shadow: 0 4px 12px rgba(0,0,0,0.2);
   cursor: pointer;
   z-index: 999;
+  font-family: var(--font-family-headings);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.fab:hover {
+  background-color: var(--accent-color-secondary);
 }
 
-/* === Popup Box === */
-.popup-box {
+/* === Modals === */
+.popup-box { /* For HomePage FAB menu */
   position: fixed;
   bottom: 90px;
-  right: 20px;
-  background-color: #fff8e7;
-  border: 1px solid #c4a060;
+  right: 300px;
+  margin-right: 20px;
+  background-color: var(--container-bg-opaque);
+  border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 1rem;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  padding: 1.5rem;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.25);
   z-index: 1000;
-  font-family: 'EB Garamond', serif;
+  font-family: var(--font-family-ebgaramond);
+  color: var(--text-color-main);
+  width: auto;
+  min-width: 250px;
+}
+/* Styling for buttons within the FAB popup */
+.popup-box button {
+  display: flex;
+  align-items: center;
+  gap: 0.75em; /* Increased gap for better icon spacing */
+  width: 100%; /* Make buttons full width of popup */
+  justify-content: flex-start; /* Align icon and text to the left */
+  margin-bottom: 0.5rem; /* Space between buttons */
+  padding: 0.6em 1em; /* Adjusted padding for better feel */
+}
+.popup-box button:last-child {
+  margin-bottom: 0; /* No margin for the last button (Cancel) */
 }
 
-/* === Textarea & Form === */
-textarea {
-  font-family: 'EB Garamond', serif;
-  font-size: 1rem;
-  border: 1px solid #bda16c;
-  border-radius: 6px;
-  padding: 0.5rem;
+
+.modal-backdrop { /* For NodePage correction modal */
+  position: fixed;
+  top: 0;
+  left: 0;
   width: 100%;
-  resize: vertical;
-  background: #fffef9;
-  color: #3e2e1e;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.65);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1050;
 }
-
-/* === Buttons === */
-button {
-  font-family: 'Cinzel', serif;
-  font-size: 1rem;
-  background-color: #a17642;
-  color: #fff8e7;
-  border: none;
-  padding: 0.5rem 1rem;
-  border-radius: 6px;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
-  margin-right: 0.5rem;
-  transition: background-color 0.2s ease;
-}
-
-button:hover {
-  background-color: #8a6235;
-}
-
-/* === Notes === */
-.note-card {
-  background: #fffef9;
-  border: 1px solid #d4b380;
+.modal-content {
+  background-color: var(--container-bg-opaque);
+  padding: 25px;
   border-radius: 8px;
-  padding: 1rem;
+  box-shadow: 0 5px 20px rgba(0,0,0,0.35);
+  border: 1px solid var(--border-color);
+  width: 90%;
+  max-width: 500px;
+  color: var(--text-color-main);
+}
+.modal-content h3 {
+  font-family: var(--font-family-cinzel);
+  color: var(--text-color-headers);
+  margin-top: 0;
   margin-bottom: 1rem;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
 }
-
-/* === Navbar Tabs === */
-.navbar {
+.modal-actions {
+  margin-top: 20px;
   display: flex;
-  gap: 1rem;
-  margin-bottom: 1.5rem;
-  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
 }
+.modal-actions .button { padding: 0.4em 0.8em; }
+.modal-actions .button-danger { background-color: #c0392b; }
+.modal-actions .button-danger:hover { background-color: #a93226; }
+.modal-actions .button-secondary { background-color: #bdc3c7; color: #2c3e50; }
+.modal-actions .button-secondary:hover { background-color: #a1a7ab; }
 
-.navbar button {
-  background-color: #e6c29f;
-  color: #3e2e1e;
-}
-
-.navbar button.active {
-  background-color: #7b4b1d;
-  color: #fff8e7;
-}
-
-/* === Scrollbar === */
-::-webkit-scrollbar {
-  width: 12px;
-}
-
-::-webkit-scrollbar-thumb {
-  background-color: #b08a4e;
-  border-radius: 6px;
-  border: 2px solid #f5e6c8;
-}
-.sort-bar {
-  margin: 1rem 0;
-}
-
-.note-list {
-  list-style: none;
-  padding: 0;
-}
-
-.entity-list {
-  list-style: none;
-  padding: 0;
-  margin-top: 1rem;
-}
-
-.entity-link {
-  color: #5c3a1d;
-  text-decoration: none;
-  font-weight: bold;
-  font-family: 'EB Garamond', serif;
-}
-
-.entity-link:hover {
-  text-decoration: underline;
-}
-
-.button-row {
-  margin-top: 0.5rem;
-  display: flex;
-  gap: 0.5rem;
-}
-
-.button {
-  padding: 6px 12px;
-  background-color: #7b4b1d;
-  color: #fffef9;
+/* === Specific Button variants === */
+.button-icon {
+  background: none;
   border: none;
-  border-radius: 4px;
-  font-family: 'Cinzel', serif;
+  color: var(--accent-color-primary);
+  padding: 0.25rem;
+  margin: 0 0.25rem;
+  font-size: 1.2rem;
   cursor: pointer;
+  box-shadow: none;
+  border-radius: 4px;
+}
+.button-icon:hover, .button-icon:focus {
+  color: var(--link-hover-color);
+  background-color: rgba(0,0,0,0.05);
 }
 
-.button:hover {
-  background-color: #9a6332;
-}
-
-.note-content {
-  margin: 0.5rem 0;
-  cursor: text;
-  white-space: pre-wrap;
-}
-
-/* === NodePage Specific === */
-.node-page {
-  max-width: 800px;
-  margin: 0 auto;
-  padding-bottom: 2rem;
-}
-
-.entity-header {
-  font-family: 'Cinzel', serif;
-  font-size: 2rem;
-  margin-bottom: 0.25rem;
-  color: #3e2e1e;
-}
-
-.entity-meta {
-  font-size: 1rem;
-  font-style: italic;
-  color: #6a4b2c;
-  margin-bottom: 1.5rem;
+/* === Notes (HomePage) & Mentions (NodePage) Cards === */
+.note-card.highlighted {
+  border: 2px solid var(--accent-color-primary);
+  background-color: #fff5db;
+  box-shadow: 0 0 6px rgba(161, 118, 66, 0.4);
 }
 
 .mention-entry {
-  background: #fffdf6;
-  border: 1px solid #e1c89f;
-  border-radius: 6px;
-  padding: 0.75rem;
-  margin-bottom: 1rem;
-  box-shadow: 1px 1px 4px rgba(0, 0, 0, 0.05);
+  background: var(--container-bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1em;
+  margin-bottom: 1em;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.08);
 }
-
-.mention-entry p {
-  margin: 0;
-  font-size: 0.95rem;
-  color: #3e2e1e;
+.mention-entry .entity-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5em;
+  font-size: 0.85rem;
+}
+.mention-entry .entity-meta span {
+  font-family: var(--font-family-body);
+}
+.mention-entry .entity-meta .button-icon {
+  font-size: 1rem;
+  padding: 0.2rem;
 }
 
 .mention-snippet {
   font-style: italic;
   margin-top: 0.5rem;
-  color: #5a4323;
-  background-color: #fcf8eb;
-  padding: 0.5rem;
+  color: var(--text-color-main);
+  opacity: 0.9;
+  background-color: rgba(var(--parchment-bg-color-rgb), 0.2);
+  padding: 0.75em;
   border-radius: 4px;
   white-space: pre-wrap;
+  border-left: 3px solid var(--border-color);
 }
-
-/* Optional: highlight the tagged word in the snippet */
 .mention-snippet mark {
   background-color: #f0d3a3;
   padding: 0 2px;
   border-radius: 2px;
 }
 
-.note-card.highlighted {
-  border: 2px solid #a17642;
-  background-color: #fff5db;
-  box-shadow: 0 0 6px rgba(161, 118, 66, 0.4);
+/* === Scrollbar === */
+::-webkit-scrollbar { width: 12px; }
+::-webkit-scrollbar-thumb {
+  background-color: var(--accent-color-secondary);
+  border-radius: 6px;
+  border: 2px solid var(--parchment-bg-color);
 }
+
+/* === Lists & General Layout === */
+.sort-bar { margin: 1rem 0; }
+.note-list, .entity-list { list-style: none; padding: 0; }
+.entity-list { margin-top: 1rem; }
+.button-row { margin-top: 0.5rem; display: flex; gap: 0.5rem; }
+.note-content {
+  margin: 0.5rem 0;
+  cursor: text;
+  white-space: pre-wrap;
+  font-family: var(--font-family-ebgaramond);
+  color: var(--text-color-main);
+}
+.entity-meta { /* General metadata, used on NodePage for Type and HomePage for Note date */
+  font-size: 0.9rem;
+  font-style: italic;
+  color: var(--text-color-main);
+  opacity: 0.8;
+  margin-bottom: 1rem;
+}
+
+/* Styling for .entity-meta specifically within .note-card (HomePage) */
+.note-card .entity-meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem; /* Reduced bottom margin for tighter layout in card header */
+  font-size: 0.9rem; /* Ensure it matches general .entity-meta or override if needed */
+}
+
+.note-timestamp {
+  font-variant: small-caps;
+  font-size: 0.95em; /* Relative to parent .entity-meta */
+  color: var(--text-color-main); /* Or a secondary text color */
+  opacity: 0.9;
+  /* margin-left: auto; -- Not needed if parent is flex with space-between */
+}
+
+
+/* NodePage specific type editing area */
+.node-page-type-edit-area {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 1.5rem;
+}
+.node-page-type-edit-area select {
+  width: auto;
+  min-width: 150px;
+}
+.node-page-type-edit-area .button {
+  margin-right: 0;
+}
+
+/* === Specific Component Page Styles === */
+/* For NoteEntry.jsx, NameGenerator.jsx, EditNotePage.jsx */
+.form-page-container {
+  background-color: var(--container-bg-opaque);
+  border-radius: 8px;
+  padding: 2em;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+  margin: 2rem auto;
+  max-width: 700px;
+}
+.form-page-container h2 {
+  font-family: var(--font-family-cinzel);
+  color: var(--text-color-headers);
+  font-size: 1.8rem;
+  text-align: center;
+  margin-top: 0;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.5rem;
+}
+.form-page-container label {
+  font-family: var(--font-family-headings);
+  color: var(--text-color-main);
+  display: block;
+  margin-top: 1rem;
+  margin-bottom: 0.3rem;
+  font-size: 1rem;
+}
+.form-page-container .button-row,
+.form-page-container form > button,
+.form-page-container > button {
+  margin-top: 1.5rem;
+  display: flex;
+  justify-content: flex-start;
+}
+.form-page-container form > button,
+.form-page-container > button {
+   margin-right: 0;
+}
+/* NoteEntry.jsx - Tagged Entities List */
+.tagged-entities-list {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border-color);
+}
+.tagged-entities-list h3 {
+  margin-top: 0;
+  font-size: 1.2rem;
+  color: var(--text-color-headers);
+}
+.tagged-entities-list div {
+  margin-bottom: 0.3rem;
+}
+.tagged-entities-list a {
+  font-family: var(--font-family-ebgaramond);
+}
+/* NameGenerator.jsx - Generated Name Display */
+.generated-name-display {
+  margin-top: 1.5rem;
+  padding: 1em;
+  background-color: var(--input-bg-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  text-align: center;
+}
+.generated-name-display h3 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  font-size: 1rem;
+  font-style: italic;
+  color: var(--text-color-main);
+}
+.generated-name-display strong {
+  font-family: var(--font-family-cinzel);
+  font-size: 1.5rem;
+  color: var(--accent-color-primary);
+}
+.generated-name-display span {
+  display: block;
+  font-size: 0.9rem;
+  color: var(--text-color-main);
+  opacity: 0.8;
+}
+
+
+/* Responsive Adjustments */
+@media (max-width: 768px) {
+  .app-container {
+    flex-direction: column;
+  }
+  .app-wrapper {
+    padding: 1rem;
+    margin-right: 0;
+    max-width: 100%;
+  }
+  .pc-sidebar {
+    position: relative;
+    width: 100%;
+    height: auto;
+    border-left: none;
+    border-top: 2px solid var(--accent-color-primary);
+    box-shadow: none;
+    border-radius: 0;
+    margin-top: 1rem;
+  }
+  .fab, .popup-box {
+    right: 15px;
+    margin-right: 0;
+  }
+  .popup-box {
+    bottom: 85px;
+    width: calc(100% - 30px);
+  }
+  .modal-content, .form-page-container {
+    width: 95%;
+    margin: 1rem auto;
+    padding: 1.5em;
+  }
+}
+
+[end of frontend/src/App.css]

@@ -244,17 +244,19 @@ const HomePage = () => {
 
   return (
     <div className="app-wrapper">
-      <h2 className="entity-header">D&D Campaign Notes</h2>
-      <div className="navbar">
-        {tabOptions.map((tab) => (
-          <button
+      <div className="page-header-banner"> {/* ADDED THIS WRAPPER */}
+        <h2 className="entity-header">D&D Campaign Notes</h2>
+        <nav className="navbar"> {/* Changed div to nav for semantics */}
+          {tabOptions.map((tab) => (
+            <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={tab === activeTab ? 'active' : ''}
           >
             {tab}
           </button>
-        ))}
+          ))}
+        </nav>
       </div>
 
       {activeTab === 'Notes' ? (
@@ -272,15 +274,17 @@ const HomePage = () => {
                     id={`note-${n.id}`}
                     className={`note-card ${highlightNoteId === n.id ? 'highlighted' : ''}`}
                   >
-                  <div className="entity-meta">
-                  <a
-                  href={`/#note-${n.id}`}
-                  className="entity-link"
-                  style={{ textDecoration: 'none' }}
-                >
-                  <strong>Note #{n.id}</strong>
-                </a>
-                    <em>({new Date(n.created_at).toLocaleString()})</em>
+                  <div className="entity-meta"> {/* Will be styled as flex container */}
+                    <a
+                      href={`/#note-${n.id}`}
+                      className="entity-link"
+                      style={{ textDecoration: 'none' }} /* Keep or move to CSS */
+                    >
+                      <strong>Note #{n.id}</strong>
+                    </a>
+                    <em className="note-timestamp"> {/* Added class */}
+                      ({new Date(n.created_at).toLocaleString()})
+                    </em>
                   </div>
                   {editNoteId === n.id ? (
                     <>
@@ -302,9 +306,9 @@ const HomePage = () => {
                       >
                         {n.content}
                       </div>
-                      <div className="button-row">
-                        <button className="button" onClick={() => startEdit(n)}>Edit</button>
-                        <button className="button" onClick={() => deleteNote(n.id)}>Delete</button>
+                      <div className="button-row"> {/* This will be justify-content: flex-end */}
+                        <button className="button button-delete-note" onClick={() => deleteNote(n.id)}>Delete</button>
+                        <button className="button button-edit-note" onClick={() => startEdit(n)}>Edit</button>
                       </div>
                     </div>
                   )}
@@ -338,21 +342,22 @@ const HomePage = () => {
             {existingNode?.type === 'PERSON' ? (
               <>
                 <p><em>{selection.text}</em> is already tagged as a Person.</p>
-                <button onClick={() => tagWithPersonTag('Player Character')}>Add Player Character Tag</button>
-                <button onClick={() => tagWithPersonTag('Party Member')}>Add Party Member Tag</button>
+                {/* For now, these buttons will act like "Tag as Person" due to backend endpoint limitations */}
+                <button onClick={() => tagWithPersonTag('Player Character')}>👤 Add Player Character Tag</button>
+                <button onClick={() => tagWithPersonTag('Party Member')}>👤 Add Party Member Tag</button>
               </>
             ) : existingNode ? (
               <p><em>{selection.text}</em> is already tagged as {existingNode.type}.</p>
             ) : (
               <>
-                <button onClick={() => tagSelectionManually('PERSON')}>Tag as Person</button>
-                <button onClick={() => tagSelectionManually('LOCATION')}>Tag as Location</button>
-                <button onClick={() => tagSelectionManually('ITEM')}>Tag as Item</button>
-                <button onClick={() => tagSelectionManually('SPELL')}>Tag as Spell</button>
-                <button onClick={() => tagSelectionManually('MONSTER')}>Tag as Monster</button>
+                <button onClick={() => tagSelectionManually('PERSON')}>👤 Tag as Person</button>
+                <button onClick={() => tagSelectionManually('LOCATION')}>🏠 Tag as Location</button>
+                <button onClick={() => tagSelectionManually('ITEM')}>📜 Tag as Item</button>
+                <button onClick={() => tagSelectionManually('SPELL')}>🪄 Tag as Spell</button>
+                <button onClick={() => tagSelectionManually('MONSTER')}>💀 Tag as Monster</button>
               </>
             )}
-            <button onClick={() => setShowFabOptions(false)}>Cancel</button>
+            <button onClick={() => setShowFabOptions(false)} className="button-secondary">Cancel</button>
           </div>
         </div>
       )}
