@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import apiClient from '../services/apiClient'; // Import apiClient
 import '../App.css';
 import { useParams, useNavigate } from 'react-router-dom';
 
@@ -15,7 +15,7 @@ const NodePage = () => {
   useEffect(() => {
     const fetchNode = async () => {
       try {
-        const res = await axios.get(`http://localhost:4000/api/nodes/${nodeId}`);
+        const res = await apiClient.get(`/nodes/${nodeId}`); // Use apiClient, relative URL
         setNode(res.data);
         setNewType(res.data.type);
       } catch (err) {
@@ -25,7 +25,7 @@ const NodePage = () => {
 
     const fetchMentions = async () => {
       try {
-        const res = await axios.get(`http://localhost:4000/api/nodes/${nodeId}/mentions`);
+        const res = await apiClient.get(`/nodes/${nodeId}/mentions`); // Use apiClient, relative URL
         setMentions(res.data);
       } catch (err) {
         console.error('Failed to fetch mentions', err);
@@ -46,7 +46,7 @@ const NodePage = () => {
 
   const handleTypeChange = async () => {
     try {
-      await axios.patch(`http://localhost:4000/api/nodes/${nodeId}/type`, { newType });
+      await apiClient.patch(`/nodes/${nodeId}/type`, { newType }); // Use apiClient, relative URL
       setNode(prev => ({ ...prev, type: newType }));
       setIsEditingType(false);
     } catch (err) {

@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import React, { useState, useEffect, useMemo } from 'react';
+import apiClient from '../services/apiClient'; // Import apiClient
 import '../App.css';
 import { useLocation } from 'react-router-dom';
 
@@ -22,21 +22,14 @@ const HomePage = () => {
   const [existingNode, setExistingNode] = useState(null);
 
   const fetchCharacters = async () => {
-    const parseTags = (tags) => {
-      if (Array.isArray(tags)) return tags;
-      try {
-        // Safely parse PostgreSQL-style array string to JS array
-        return JSON.parse(tags.replace(/^{/, '[').replace(/}$/, ']'));
-      } catch {
-        return [];
-      }
-    };
+    // parseTags function removed
   
     try {
-      const res = await axios.get('http://localhost:4000/api/entities/by-type/PERSON');
+      const res = await apiClient.get('/entities/by-type/PERSON'); // Use apiClient
   
-      const pcs = res.data.filter(p => parseTags(p.tags).includes('Player Character'));
-      const party = res.data.filter(p => parseTags(p.tags).includes('Party Member'));
+      // Updated logic to use p.tags directly, assuming it's a JSON array
+      const pcs = res.data.filter(p => p.tags && p.tags.includes('Player Character'));
+      const party = res.data.filter(p => p.tags && p.tags.includes('Party Member'));
   
       setPlayerCharacters(pcs);
       setPartyMembers(party);
@@ -74,8 +67,8 @@ const HomePage = () => {
     };
     const fetchData = async () => {
       try {
-        const endpoint = activeTab === 'Notes' ? 'notes' : `entities/by-type/${typeMap[activeTab]}`;
-        const res = await axios.get(`http://localhost:4000/api/${endpoint}`);
+        const endpoint = activeTab === 'Notes' ? '/notes' : `/entities/by-type/${typeMap[activeTab]}`; // Relative URLs
+        const res = await apiClient.get(endpoint); // Use apiClient
         setData(res.data);
       } catch (err) {
         console.error('Failed to fetch data', err);
@@ -84,8 +77,13 @@ const HomePage = () => {
     };
 
     fetchData();
-    fetchCharacters();
+    // fetchCharacters(); // Removed from here
   }, [activeTab]);
+
+  // New useEffect for initial character fetch
+  useEffect(() => {
+    fetchCharacters();
+  }, []); // Empty dependency array means this runs once on mount
 
   const handleTextSelect = async (noteId, content) => {
     const selectionObj = window.getSelection();
@@ -101,7 +99,7 @@ const HomePage = () => {
     setShowFabOptions(true);
 
     try {
-      const res = await axios.get(`http://localhost:4000/api/nodes/by-name/${encodeURIComponent(text)}`);
+      const res = await apiClient.get(`/nodes/by-name/${encodeURIComponent(text)}`); // Use apiClient
       setExistingNode(res.data || null);
     } catch {
       setExistingNode(null);
@@ -111,7 +109,7 @@ const HomePage = () => {
   const tagSelectionManually = async (type) => {
     if (!selection.text || selectedNoteId == null) return;
     try {
-      await axios.post('http://localhost:4000/api/manual-tag', {
+      await apiClient.post('/manual-tag', { // Use apiClient
         name: selection.text,
         note_id: selectedNoteId,
         type,
@@ -121,7 +119,7 @@ const HomePage = () => {
       setSelection({ text: '', start: null, end: null });
       setSelectedNoteId(null);
       setShowFabOptions(false);
-      await axios.post('http://localhost:4000/api/retag-entity-everywhere', {
+      await apiClient.post('/retag-entity-everywhere', { // Use apiClient
         name: selection.text,
         type
       });
@@ -135,7 +133,7 @@ const HomePage = () => {
   const tagWithPersonTag = async (tagLabel) => {
     if (!selection.text || selectedNoteId == null) return;
     try {
-      await axios.post('http://localhost:4000/api/manual-tag', {
+      await apiClient.post('/manual-tag', { // Use apiClient
         name: selection.text,
         note_id: selectedNoteId,
         type: 'PERSON',
@@ -146,7 +144,7 @@ const HomePage = () => {
       setSelection({ text: '', start: null, end: null });
       setSelectedNoteId(null);
       setShowFabOptions(false);
-      await axios.post('http://localhost:4000/api/retag-entity-everywhere', {
+      await apiClient.post('/retag-entity-everywhere', { // Use apiClient
         name: selection.text,
         type: 'PERSON'
       });
@@ -164,20 +162,25 @@ const HomePage = () => {
 
   const saveEdit = async (id) => {
     try {
-      await axios.put(`http://localhost:4000/api/notes/${id}`, { content: editContent });
+      await apiClient.put(`/notes/${id}`, { content: editContent }); // Use apiClient
+      // Update local state instead of re-fetching all notes
+      setData(currentData =>
+        currentData.map(note =>
+          note.id === id ? { ...note, content: editContent } : note
+        )
+      );
       setEditNoteId(null);
       setEditContent('');
-      const res = await axios.get('http://localhost:4000/api/notes');
-      setData(res.data);
     } catch (err) {
       console.error('Failed to update note:', err);
+      // Optionally, revert local state or show error to user
     }
   };
 
   const deleteNote = async (id) => {
     if (!window.confirm('Are you sure you want to delete this note?')) return;
     try {
-      await axios.delete(`http://localhost:4000/api/notes/${id}`);
+      await apiClient.delete(`/notes/${id}`); // Use apiClient
       setData(data.filter((n) => n.id !== id));
     } catch (err) {
       console.error('Failed to delete note:', err);
@@ -188,20 +191,50 @@ const HomePage = () => {
     if (!newNoteContent.trim()) return;
     setSubmitting(true);
     try {
-      await axios.post('http://localhost:4000/api/add-note', {
+      const res = await apiClient.post('/add-note', { // Use apiClient
         content: newNoteContent
       });
+      // Add new note to local state using response data
+      const newNote = {
+        id: res.data.id,
+        content: newNoteContent, // Content is from local state before clearing
+        created_at: res.data.created_at,
+        // Assuming 'nodes' from response isn't directly stored in the 'data' array for notes view,
+        // but if it were, you'd add res.data.nodes here.
+        // For the 'Notes' tab, we primarily care about id, content, created_at.
+      };
+      setData(currentData => [newNote, ...currentData]); // Prepend new note
+
       setNewNoteContent('');
       setShowNewNoteForm(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
-      const refreshed = await axios.get('http://localhost:4000/api/notes');
-      setData(refreshed.data);
+      // No need to re-fetch all notes
     } catch (err) {
       console.error('Failed to submit new note:', err);
+      // Optionally, inform user about the error
     } finally {
       setSubmitting(false);
     }
   };
+
+  const sortedNotes = useMemo(() => {
+    if (activeTab === 'Notes') {
+      // Ensure 'data' contains notes and they have 'created_at' and 'id'
+      const notesData = Array.isArray(data) ? data : [];
+      return [...notesData].sort((a, b) => {
+        // Basic check for properties to avoid runtime errors if data structure is unexpected
+        const dateA = a && a.created_at ? new Date(a.created_at) : 0;
+        const dateB = b && b.created_at ? new Date(b.created_at) : 0;
+        const idA = a && a.id ? a.id : 0;
+        const idB = b && b.id ? b.id : 0;
+
+        return sortByRecent ? dateB - dateA : idA - idB;
+      });
+    }
+    return []; // Return empty array if not 'Notes' tab or data is not notes-like
+                 // Or return 'data' directly if other tabs also use 'data' and don't need this sorting
+  }, [data, sortByRecent, activeTab]);
+
 
   return (
     <div className="app-wrapper">
@@ -226,13 +259,8 @@ const HomePage = () => {
             </button>
           </div>
           <ul className="note-list">
-            {[...data]
-              .sort((a, b) =>
-                sortByRecent
-                  ? new Date(b.created_at) - new Date(a.created_at)
-                  : a.id - b.id
-              )
-              .map((n) => (
+            {/* Use sortedNotes here */}
+            {sortedNotes.map((n) => (
                   <li
                     key={n.id}
                     id={`note-${n.id}`}
@@ -280,6 +308,9 @@ const HomePage = () => {
         </>
       ) : (
         <ul className="entity-list">
+          {/* For other tabs, 'data' is used directly.
+              If 'sortedNotes' returned 'data' for non-Notes tabs, it could be used here too.
+              However, the current useMemo returns [] for non-Notes tabs, so 'data' is correct. */}
           {data.map((n) => (
             <li key={n.id}>
               <a href={`/node/${n.id}`} className="entity-link">{n.name}</a>

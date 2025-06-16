@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import axios from 'axios';
+import apiClient from '../services/apiClient'; // Import apiClient
 import { Link } from 'react-router-dom';
 
 const NoteEntry = () => {
@@ -11,7 +11,7 @@ const NoteEntry = () => {
     if (!note.trim()) return;
     setLoading(true);
     try {
-      const res = await axios.post('http://localhost:4000/api/add-note', { content: note });
+      const res = await apiClient.post('/add-note', { content: note }); // Use apiClient, relative URL
       setResponse(res.data);
       setNote('');
     } catch (err) {

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import apiClient from '../services/apiClient'; // Import apiClient
 import { useParams, useNavigate } from 'react-router-dom';
 
 const EditNotePage = () => {
@@ -11,7 +11,7 @@ const EditNotePage = () => {
   useEffect(() => {
     const fetchNote = async () => {
       try {
-        const response = await axios.get(`http://localhost:4000/api/notes/${id}`);
+        const response = await apiClient.get(`/notes/${id}`); // Use apiClient, relative URL
         setTitle(response.data.title);
         setContent(response.data.content);
       } catch (error) {
@@ -25,7 +25,7 @@ const EditNotePage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await axios.put(`http://localhost:4000/api/notes/${id}`, { title, content });
+      await apiClient.put(`/notes/${id}`, { title, content }); // Use apiClient, relative URL
       navigate(`/notes/${id}`); // Or navigate to the notes list
     } catch (error) {
       console.error('Error updating note:', error);
