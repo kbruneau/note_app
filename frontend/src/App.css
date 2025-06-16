@@ -1,0 +1,294 @@
+/* === Global Base === */
+body {
+  margin: 0;
+  padding: 0;
+  background-color: #f5e6c8;
+  color: #3e2e1e;
+  font-family: 'EB Garamond', serif;
+  background-image: url('./assets/parchment-texture.png');
+  background-size: cover;
+  background-attachment: fixed;
+  display: flex;
+}
+
+.app-wrapper {
+  flex: 1;
+  padding: 2rem 2rem 2rem 2rem;
+  padding-right: 300px; /* reserve space for sidebar */
+}
+
+/* === Right Sidebar for Player Character Panel === */
+.pc-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 280px;
+  height: 100vh;
+  background-color: #f4debc;
+  border-left: 2px solid #7b4b1d;
+  padding: 1rem;
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
+  overflow-y: auto;
+  z-index: 998;
+}
+
+.pc-sidebar h3 {
+  font-family: 'Cinzel', serif;
+  font-size: 1.2rem;
+  margin-bottom: 1rem;
+  color: #3e2e1e;
+}
+
+.pc-tile {
+  background: #fff8e7;
+  border: 1px solid #c4a060;
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  box-shadow: 1px 1px 4px rgba(0,0,0,0.1);
+}
+
+.pc-tile h4 {
+  margin: 0;
+  font-family: 'Cinzel', serif;
+  font-size: 1rem;
+  color: #3e2e1e;
+}
+
+.pc-tile small {
+  display: block;
+  font-size: 0.85rem;
+  color: #7b4b1d;
+  margin-top: 0.25rem;
+}
+
+/* === Entity Tags === */
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  background: #d9caa3;
+  border-radius: 4px;
+  margin-right: 4px;
+  font-weight: bold;
+  font-size: 0.85rem;
+}
+
+.tag.person { color: #9d2b2b; }
+.tag.place  { color: #3b4b9d; }
+.tag.item   { color: #2e7d32; }
+.tag.spell  { color: #6a1b9a; }
+.tag.monster { color: #4e342e; }
+.tag.pc { background: #9d2b2b; color: #fff8e7; }
+.tag.party { background: #7c4a19; color: #fff8e7; }
+
+/* === FAB === */
+.fab {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background-color: #7b4b1d;
+  color: #fff;
+  font-size: 2rem;
+  border: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  cursor: pointer;
+  z-index: 999;
+}
+
+/* === Popup Box === */
+.popup-box {
+  position: fixed;
+  bottom: 90px;
+  right: 20px;
+  background-color: #fff8e7;
+  border: 1px solid #c4a060;
+  border-radius: 8px;
+  padding: 1rem;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+  z-index: 1000;
+  font-family: 'EB Garamond', serif;
+}
+
+/* === Textarea & Form === */
+textarea {
+  font-family: 'EB Garamond', serif;
+  font-size: 1rem;
+  border: 1px solid #bda16c;
+  border-radius: 6px;
+  padding: 0.5rem;
+  width: 100%;
+  resize: vertical;
+  background: #fffef9;
+  color: #3e2e1e;
+}
+
+/* === Buttons === */
+button {
+  font-family: 'Cinzel', serif;
+  font-size: 1rem;
+  background-color: #a17642;
+  color: #fff8e7;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+  margin-right: 0.5rem;
+  transition: background-color 0.2s ease;
+}
+
+button:hover {
+  background-color: #8a6235;
+}
+
+/* === Notes === */
+.note-card {
+  background: #fffef9;
+  border: 1px solid #d4b380;
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+}
+
+/* === Navbar Tabs === */
+.navbar {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.navbar button {
+  background-color: #e6c29f;
+  color: #3e2e1e;
+}
+
+.navbar button.active {
+  background-color: #7b4b1d;
+  color: #fff8e7;
+}
+
+/* === Scrollbar === */
+::-webkit-scrollbar {
+  width: 12px;
+}
+
+::-webkit-scrollbar-thumb {
+  background-color: #b08a4e;
+  border-radius: 6px;
+  border: 2px solid #f5e6c8;
+}
+.sort-bar {
+  margin: 1rem 0;
+}
+
+.note-list {
+  list-style: none;
+  padding: 0;
+}
+
+.entity-list {
+  list-style: none;
+  padding: 0;
+  margin-top: 1rem;
+}
+
+.entity-link {
+  color: #5c3a1d;
+  text-decoration: none;
+  font-weight: bold;
+  font-family: 'EB Garamond', serif;
+}
+
+.entity-link:hover {
+  text-decoration: underline;
+}
+
+.button-row {
+  margin-top: 0.5rem;
+  display: flex;
+  gap: 0.5rem;
+}
+
+.button {
+  padding: 6px 12px;
+  background-color: #7b4b1d;
+  color: #fffef9;
+  border: none;
+  border-radius: 4px;
+  font-family: 'Cinzel', serif;
+  cursor: pointer;
+}
+
+.button:hover {
+  background-color: #9a6332;
+}
+
+.note-content {
+  margin: 0.5rem 0;
+  cursor: text;
+  white-space: pre-wrap;
+}
+
+/* === NodePage Specific === */
+.node-page {
+  max-width: 800px;
+  margin: 0 auto;
+  padding-bottom: 2rem;
+}
+
+.entity-header {
+  font-family: 'Cinzel', serif;
+  font-size: 2rem;
+  margin-bottom: 0.25rem;
+  color: #3e2e1e;
+}
+
+.entity-meta {
+  font-size: 1rem;
+  font-style: italic;
+  color: #6a4b2c;
+  margin-bottom: 1.5rem;
+}
+
+.mention-entry {
+  background: #fffdf6;
+  border: 1px solid #e1c89f;
+  border-radius: 6px;
+  padding: 0.75rem;
+  margin-bottom: 1rem;
+  box-shadow: 1px 1px 4px rgba(0, 0, 0, 0.05);
+}
+
+.mention-entry p {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #3e2e1e;
+}
+
+.mention-snippet {
+  font-style: italic;
+  margin-top: 0.5rem;
+  color: #5a4323;
+  background-color: #fcf8eb;
+  padding: 0.5rem;
+  border-radius: 4px;
+  white-space: pre-wrap;
+}
+
+/* Optional: highlight the tagged word in the snippet */
+.mention-snippet mark {
+  background-color: #f0d3a3;
+  padding: 0 2px;
+  border-radius: 2px;
+}
+
+.note-card.highlighted {
+  border: 2px solid #a17642;
+  background-color: #fff5db;
+  box-shadow: 0 0 6px rgba(161, 118, 66, 0.4);
+}
