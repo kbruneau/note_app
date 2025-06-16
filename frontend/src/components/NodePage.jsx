@@ -98,23 +98,39 @@ const NodePage = () => {
               <li key={m.id} className="mention-entry">
                 <div className="entity-meta">
                   <strong>Note #{m.note_id}</strong>
-                  <button
-                    onClick={() => toggleNote(m.note_id)}
-                    style={{
-                      float: 'right',
-                      fontSize: '0.8rem',
-                      padding: '2px 6px',
-                      border: '1px solid #a17642',
-                      borderRadius: '4px',
-                      background: 'none',
-                      cursor: 'pointer',
-                      color: '#7b4b1d'
-                    }}
-                  >
-                    {expandedNotes.includes(m.note_id) ? 'Collapse' : 'Expand'}
-                  </button>
+                  <div style={{ float: 'right' }}>
+                    <button
+                      onClick={() => navigate(`/notes/${m.note_id}/edit`)}
+                      style={{
+                        fontSize: '0.8rem',
+                        padding: '2px 6px',
+                        border: '1px solid #a17642',
+                        borderRadius: '4px',
+                        background: 'none',
+                        cursor: 'pointer',
+                        color: '#7b4b1d',
+                        marginRight: '5px'
+                      }}
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => toggleNote(m.note_id)}
+                      style={{
+                        fontSize: '0.8rem',
+                        padding: '2px 6px',
+                        border: '1px solid #a17642',
+                        borderRadius: '4px',
+                        background: 'none',
+                        cursor: 'pointer',
+                        color: '#7b4b1d'
+                      }}
+                    >
+                      {expandedNotes.includes(m.note_id) ? 'Collapse' : 'Expand'}
+                    </button>
+                  </div>
                 </div>
-                <div className="mention-snippet">
+                <div className="mention-snippet" style={{ clear: 'both' }}>
                   <em>
                     {expandedNotes.includes(m.note_id)
                       ? m.note_content
