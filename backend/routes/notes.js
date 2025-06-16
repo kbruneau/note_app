@@ -209,5 +209,286 @@ module.exports = (pool) => {
     }
   });
 
+  // Correct a mention
+  router.post('/mentions/:mentionId/correct', async (req, res) => {
+    const { mentionId } = req.params;
+    const {
+      new_name_segment, // Optional: Corrected text of the mention
+      new_type,         // Required: Corrected entity type
+      note_id,          // Required: ID of the note containing this mention
+      original_text_segment, // Required: Original text of the mention
+      original_mention_type, // Required: Original type of the mention
+      original_source,       // Optional: Original source from note_mentions
+      original_confidence,   // Optional: Original confidence from note_mentions
+      start_pos,        // Optional: New start position if span is corrected
+      end_pos           // Optional: New end position if span is corrected
+    } = req.body;
+
+    if (!new_type || !note_id || !original_text_segment || !original_mention_type) {
+      return res.status(400).json({
+        error: 'Missing required fields: new_type, note_id, original_text_segment, original_mention_type are required.'
+      });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const name_to_use = new_name_segment || original_text_segment;
+      let final_node_id;
+
+      // Step 1: Check if the target node (corrected name and type) exists or create it
+      const existingNodeRes = await client.query(
+        `SELECT id FROM "DM"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2`,
+        [name_to_use, new_type]
+      );
+
+      if (existingNodeRes.rows.length > 0) {
+        final_node_id = existingNodeRes.rows[0].id;
+      } else {
+        const newNodeRes = await client.query(
+          `INSERT INTO "DM"."nodes" (name, type) VALUES ($1, $2) RETURNING id`,
+          [name_to_use, new_type]
+        );
+        final_node_id = newNodeRes.rows[0].id;
+      }
+
+      // Step 2: Update the existing mention in DM.note_mentions
+      // Determine which fields to update in note_mentions
+      const updateFields = [];
+      const updateValues = [];
+      let paramCount = 1;
+
+      updateFields.push(`node_id = $${paramCount++}`);
+      updateValues.push(final_node_id);
+
+      updateFields.push(`mention_type = $${paramCount++}`);
+      updateValues.push(new_type);
+
+      updateFields.push(`source = $${paramCount++}`);
+      updateValues.push('USER_MODIFIED');
+
+      updateFields.push(`confidence = $${paramCount++}`);
+      updateValues.push(1.0);
+
+      if (start_pos !== undefined && end_pos !== undefined) {
+        updateFields.push(`start_pos = $${paramCount++}`);
+        updateValues.push(start_pos);
+        updateFields.push(`end_pos = $${paramCount++}`);
+        updateValues.push(end_pos);
+      }
+
+      updateValues.push(mentionId); // For the WHERE clause
+
+      const updateMentionQuery = `
+        UPDATE "DM"."note_mentions"
+        SET ${updateFields.join(', ')}
+        WHERE id = $${paramCount}
+        RETURNING *;
+      `;
+
+      const updatedMentionRes = await client.query(updateMentionQuery, updateValues);
+      if (updatedMentionRes.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Mention not found or not updated.' });
+      }
+
+      // Step 3: Log the correction
+      await client.query(
+        `INSERT INTO "DM"."tagging_corrections" (
+          note_id, mention_id, original_text_segment, original_mention_type,
+          original_source, original_confidence, corrected_text_segment,
+          corrected_mention_type, correction_action
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          note_id, mentionId, original_text_segment, original_mention_type,
+          original_source, original_confidence, name_to_use,
+          new_type, 'MODIFY'
+        ]
+      );
+
+      await client.query('COMMIT');
+      res.json({
+        success: true,
+        message: "Mention updated successfully",
+        updated_mention: updatedMentionRes.rows[0]
+      });
+
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('🔥 Failed to correct mention:', err);
+      res.status(500).json({ error: 'Failed to correct mention', message: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  // Add a new mention to a note
+  router.post('/notes/:noteId/mentions/add', async (req, res) => {
+    const { noteId: note_id_param } = req.params; // note_id from URL
+    const noteId = parseInt(note_id_param, 10);
+
+    const {
+      name_segment, // Required: Text of the new mention
+      type,         // Required: Entity type for the new mention
+      start_pos,    // Required: Start position
+      end_pos       // Required: End position
+    } = req.body;
+
+    if (!name_segment || !type || start_pos === undefined || end_pos === undefined) {
+      return res.status(400).json({
+        error: 'Missing required fields: name_segment, type, start_pos, end_pos are required.'
+      });
+    }
+    if (isNaN(noteId)) {
+        return res.status(400).json({ error: 'Invalid noteId parameter.' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      let final_node_id;
+
+      // Step 1: Find or create node in DM.nodes
+      const existingNodeRes = await client.query(
+        `SELECT id FROM "DM"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2`,
+        [name_segment, type]
+      );
+
+      if (existingNodeRes.rows.length > 0) {
+        final_node_id = existingNodeRes.rows[0].id;
+      } else {
+        const newNodeRes = await client.query(
+          `INSERT INTO "DM"."nodes" (name, type) VALUES ($1, $2) RETURNING id`,
+          [name_segment, type]
+        );
+        final_node_id = newNodeRes.rows[0].id;
+      }
+
+      // Step 2: Insert into DM.note_mentions
+      const newMentionRes = await client.query(
+        `INSERT INTO "DM"."note_mentions" (
+          node_id, note_id, start_pos, end_pos, mention_type, source, confidence
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+        RETURNING *`, // Return the newly created mention
+        [final_node_id, noteId, start_pos, end_pos, type, 'USER_ADDED', 1.0]
+      );
+      const new_mention_record = newMentionRes.rows[0];
+      const new_mention_id = new_mention_record.id;
+
+      // Step 3: Log to DM.tagging_corrections
+      await client.query(
+        `INSERT INTO "DM"."tagging_corrections" (
+          note_id, mention_id, original_text_segment, original_mention_type,
+          original_source, original_confidence, corrected_text_segment,
+          corrected_mention_type, correction_action
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          noteId, new_mention_id, name_segment, null, // original_mention_type is null for new adds
+          null, null, // original_source & original_confidence are null
+          name_segment, type, 'ADD_TAG'
+        ]
+      );
+
+      await client.query('COMMIT');
+      res.status(201).json({
+        success: true,
+        message: "Mention added successfully",
+        new_mention: new_mention_record
+      });
+
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('🔥 Failed to add new mention:', err);
+      res.status(500).json({ error: 'Failed to add new mention', message: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  // Delete a mention
+  router.delete('/mentions/:mentionId', async (req, res) => {
+    const { mentionId: mention_id_param } = req.params;
+    const mentionId = parseInt(mention_id_param, 10);
+
+    // Optional request body parameters for more complete logging, though fetching is preferred.
+    const {
+        note_id: body_note_id,
+        original_text_segment: body_text_segment,
+        original_mention_type: body_mention_type,
+        original_source: body_source,
+        original_confidence: body_confidence
+    } = req.body;
+
+    if (isNaN(mentionId)) {
+      return res.status(400).json({ error: 'Invalid mentionId parameter.' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Step 1: Fetch Mention Details (Before Deleting)
+      const mentionDetailsRes = await client.query(
+        `SELECT m.note_id, m.start_pos, m.end_pos, m.mention_type, m.source, m.confidence, n.name AS node_name
+         FROM "DM"."note_mentions" m
+         JOIN "DM"."nodes" n ON m.node_id = n.id
+         WHERE m.id = $1`,
+        [mentionId]
+      );
+
+      if (mentionDetailsRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Mention not found.' });
+      }
+      const fetchedMention = mentionDetailsRes.rows[0];
+
+      const note_id_to_log = body_note_id !== undefined ? body_note_id : fetchedMention.note_id;
+      const text_to_log = body_text_segment || fetchedMention.node_name; // Prefer body if provided, else fetched node name
+      const type_to_log = body_mention_type || fetchedMention.mention_type;
+      const source_to_log = body_source !== undefined ? body_source : fetchedMention.source;
+      const confidence_to_log = body_confidence !== undefined ? body_confidence : fetchedMention.confidence;
+
+
+      // Step 2: Log to DM.tagging_corrections
+      await client.query(
+        `INSERT INTO "DM"."tagging_corrections" (
+          note_id, mention_id, original_text_segment, original_mention_type,
+          original_source, original_confidence, corrected_text_segment,
+          corrected_mention_type, correction_action
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+        [
+          note_id_to_log, mentionId, text_to_log, type_to_log,
+          source_to_log, confidence_to_log, null, // corrected_text_segment is null for delete
+          null, 'DELETE_TAG' // corrected_mention_type is null
+        ]
+      );
+
+      // Step 3: Delete from DM.note_mentions
+      const deleteMentionRes = await client.query(
+        `DELETE FROM "DM"."note_mentions" WHERE id = $1`,
+        [mentionId]
+      );
+
+      // This check is technically redundant if the fetch succeeded, but good for safety.
+      if (deleteMentionRes.rowCount === 0) {
+        await client.query('ROLLBACK');
+        // Should have been caught by the fetch, but as a safeguard:
+        return res.status(404).json({ error: 'Mention not found for deletion (race condition or inconsistency).' });
+      }
+
+      await client.query('COMMIT');
+      res.json({ success: true, message: "Mention deleted successfully" });
+
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('🔥 Failed to delete mention:', err);
+      res.status(500).json({ error: 'Failed to delete mention', message: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
   return router;
 };

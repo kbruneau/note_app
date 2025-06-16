@@ -109,49 +109,55 @@ const HomePage = () => {
   const tagSelectionManually = async (type) => {
     if (!selection.text || selectedNoteId == null) return;
     try {
-      await apiClient.post('/manual-tag', { // Use apiClient
-        name: selection.text,
-        note_id: selectedNoteId,
-        type,
+      // Updated to use the new endpoint and payload structure
+      await apiClient.post(`/notes/${selectedNoteId}/mentions/add`, {
+        name_segment: selection.text,
+        type: type,
         start_pos: selection.start,
         end_pos: selection.end
       });
       setSelection({ text: '', start: null, end: null });
       setSelectedNoteId(null);
       setShowFabOptions(false);
-      await apiClient.post('/retag-entity-everywhere', { // Use apiClient
+
+      // Keep the /retag-entity-everywhere call for now
+      await apiClient.post('/retag-entity-everywhere', {
         name: selection.text,
-        type
+        type: type
       });
-      await fetchCharacters();
+      await fetchCharacters(); // Refresh character list in sidebar
     } catch (err) {
       console.error('Failed to manually tag:', err);
-      alert('Error tagging word. Check console.');
+      alert('Error tagging word. Check console. ' + (err.response?.data?.error || err.message));
     }
   };
 
   const tagWithPersonTag = async (tagLabel) => {
+    // This function now becomes a shortcut for tagSelectionManually('PERSON')
+    // The specific tagLabel (e.g. "Player Character") handling is removed for now,
+    // as the new `/notes/:noteId/mentions/add` endpoint doesn't handle adding tags to DM.nodes.
+    // This would require a separate endpoint or modification of node update logic.
     if (!selection.text || selectedNoteId == null) return;
     try {
-      await apiClient.post('/manual-tag', { // Use apiClient
-        name: selection.text,
-        note_id: selectedNoteId,
+      await apiClient.post(`/notes/${selectedNoteId}/mentions/add`, {
+        name_segment: selection.text,
         type: 'PERSON',
         start_pos: selection.start,
-        end_pos: selection.end,
-        tag: tagLabel
+        end_pos: selection.end
       });
       setSelection({ text: '', start: null, end: null });
       setSelectedNoteId(null);
       setShowFabOptions(false);
-      await apiClient.post('/retag-entity-everywhere', { // Use apiClient
+
+      // Keep the /retag-entity-everywhere call for now
+      await apiClient.post('/retag-entity-everywhere', {
         name: selection.text,
         type: 'PERSON'
       });
-      await fetchCharacters();  // <--- Ensures sidebar is updated immediately
+      await fetchCharacters(); // Refresh character list in sidebar
     } catch (err) {
-      console.error('Failed to tag with person label:', err);
-      alert('Error tagging with PC/Party label.');
+      console.error('Failed to tag with person tag:', err);
+      alert('Error tagging as Person. Check console. ' + (err.response?.data?.error || err.message));
     }
   };
 
