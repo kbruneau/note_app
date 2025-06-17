@@ -63,32 +63,32 @@ const MainLayout = () => {
   };
 
   return (
-    <div className="app-container"> {/* Outermost container for flex layout */}
-      <div className="app-wrapper"> {/* Main content area, takes remaining space */}
-        <div className="page-header-banner">
-          <Link to="/" style={{ textDecoration: 'none' }}> {/* Make title a link to home */}
-            <h2 className="entity-header">D&D Campaign Notes</h2>
-          </Link>
-          <nav className="navbar">
-            {tabOptions.map((tab) => (
-              <button
-                key={tab}
-                onClick={() => handleTabClick(tab)}
-                className={activeTab === tab ? 'active' : ''}
-              >
-                {tab}
-              </button>
-            ))}
-          </nav>
-        </div>
-
-        {/* Content of the current route will be rendered here */}
-        <Outlet />
+    <div className="app-container"> {/* Outermost container, flex-direction: column */}
+      <div className="page-header-banner"> {/* First child of app-container */}
+        <Link to="/" style={{ textDecoration: 'none' }}>
+          <h2 className="entity-header">D&D Campaign Notes</h2>
+        </Link>
+        <nav className="navbar">
+          {tabOptions.map((tab) => (
+            <button
+              key={tab}
+              onClick={() => handleTabClick(tab)}
+              className={activeTab === tab ? 'active' : ''}
+            >
+              {tab}
+            </button>
+          ))}
+        </nav>
       </div>
 
-      <div className="pc-sidebar">
-        <h3>Player Characters</h3>
-        {playerCharacters.length > 0 ? playerCharacters.map((pc) => (
+      <div className="app-content-area"> {/* Second child of app-container, flex-direction: row */}
+        <div className="app-wrapper"> {/* First child of app-content-area, for Outlet */}
+          <Outlet />
+        </div>
+
+        <div className="pc-sidebar"> {/* Second child of app-content-area */}
+          <h3>Player Characters</h3>
+          {playerCharacters.length > 0 ? playerCharacters.map((pc) => (
           <div key={pc.id} className="pc-tile">
             <Link to={`/node/${pc.id}`} className="entity-link">
               <h4>{pc.name}</h4>
