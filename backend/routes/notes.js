@@ -22,7 +22,7 @@ module.exports = (pool) => {
     try {
       // Step 1: Insert the note into the database
       const noteInsertResult = await pool.query(
-        `INSERT INTO "DM"."notes" (content) VALUES ($1) RETURNING id, created_at`,
+        `INSERT INTO "Note"."notes" (content) VALUES ($1) RETURNING id, created_at`,
         [content]
       );
       noteId = noteInsertResult.rows[0].id;
@@ -72,7 +72,7 @@ module.exports = (pool) => {
     try {
       const { rows } = await pool.query(`
         SELECT id, content, created_at
-        FROM "DM"."notes"
+        FROM "Note"."notes"
         ORDER BY created_at DESC
       `);
       res.json(rows);
@@ -90,9 +90,9 @@ module.exports = (pool) => {
     try {
       // Start transaction for database operations
       await client.query('BEGIN');
-      await client.query(`UPDATE "DM"."notes" SET content = $1 WHERE id = $2`, [content, id]);
-      await client.query(`DELETE FROM "DM"."note_mentions" WHERE note_id = $1`, [id]);
-      await client.query(`DELETE FROM "DM"."node_links" WHERE note_id = $1`, [id]);
+      await client.query(`UPDATE "Note"."notes" SET content = $1 WHERE id = $2`, [content, id]);
+      await client.query(`DELETE FROM "Note"."note_mentions" WHERE note_id = $1`, [id]);
+      await client.query(`DELETE FROM "Note"."node_links" WHERE note_id = $1`, [id]);
       await client.query('COMMIT'); // Commit database changes before calling tagger
 
       // Now call the tagger service
@@ -148,9 +148,9 @@ module.exports = (pool) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(`DELETE FROM "DM"."note_mentions" WHERE note_id = $1`, [id]);
-      await client.query(`DELETE FROM "DM"."node_links" WHERE note_id = $1`, [id]);
-      await client.query(`DELETE FROM "DM"."notes" WHERE id = $1`, [id]);
+      await client.query(`DELETE FROM "Note"."note_mentions" WHERE note_id = $1`, [id]);
+      await client.query(`DELETE FROM "Note"."node_links" WHERE note_id = $1`, [id]);
+      await client.query(`DELETE FROM "Note"."notes" WHERE id = $1`, [id]);
       await client.query('COMMIT');
       res.json({ success: true });
     } catch (err) {
@@ -170,7 +170,7 @@ module.exports = (pool) => {
       await client.query('BEGIN');
       // Check if the node already exists
       const existing = await client.query(`
-        SELECT id FROM "DM"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2
+        SELECT id FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2
       `, [name, type]);
   
       let nodeId; // Renamed to avoid conflict with the note_id from req.body
@@ -178,7 +178,7 @@ module.exports = (pool) => {
         nodeId = existing.rows[0].id;
       } else {
         const insert = await client.query(`
-          INSERT INTO "DM"."nodes" (name, type) VALUES ($1, $2) RETURNING id
+          INSERT INTO "Note"."nodes" (name, type) VALUES ($1, $2) RETURNING id
         `, [name, type]);
         nodeId = insert.rows[0].id;
       }
@@ -186,7 +186,7 @@ module.exports = (pool) => {
       // Append tag only if it's a PERSON and not already tagged
       if (tag && type === 'PERSON') {
         await client.query(`
-          UPDATE "DM"."nodes"
+          UPDATE "Note"."nodes"
           SET tags = array_append(tags, $1)
           WHERE id = $2 AND NOT ($1 = ANY(tags))
         `, [tag, nodeId]);
@@ -194,7 +194,7 @@ module.exports = (pool) => {
   
       // Create note mention
       await client.query(`
-        INSERT INTO "DM"."note_mentions" (node_id, note_id, start_pos, end_pos, mention_type)
+        INSERT INTO "Note"."note_mentions" (node_id, note_id, start_pos, end_pos, mention_type)
         VALUES ($1, $2, $3, $4, $5)
       `, [nodeId, note_id, start_pos, end_pos, type]); // Use note_id from req.body here
   
@@ -239,7 +239,7 @@ module.exports = (pool) => {
 
       // Step 1: Check if the target node (corrected name and type) exists or create it
       const existingNodeRes = await client.query(
-        `SELECT id FROM "DM"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2`,
+        `SELECT id FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2`,
         [name_to_use, new_type]
       );
 
@@ -247,13 +247,13 @@ module.exports = (pool) => {
         final_node_id = existingNodeRes.rows[0].id;
       } else {
         const newNodeRes = await client.query(
-          `INSERT INTO "DM"."nodes" (name, type) VALUES ($1, $2) RETURNING id`,
+          `INSERT INTO "Note"."nodes" (name, type) VALUES ($1, $2) RETURNING id`,
           [name_to_use, new_type]
         );
         final_node_id = newNodeRes.rows[0].id;
       }
 
-      // Step 2: Update the existing mention in DM.note_mentions
+      // Step 2: Update the existing mention in Note.note_mentions
       // Determine which fields to update in note_mentions
       const updateFields = [];
       const updateValues = [];
@@ -281,7 +281,7 @@ module.exports = (pool) => {
       updateValues.push(mentionId); // For the WHERE clause
 
       const updateMentionQuery = `
-        UPDATE "DM"."note_mentions"
+        UPDATE "Note"."note_mentions"
         SET ${updateFields.join(', ')}
         WHERE id = $${paramCount}
         RETURNING *;
@@ -295,7 +295,7 @@ module.exports = (pool) => {
 
       // Step 3: Log the correction
       await client.query(
-        `INSERT INTO "DM"."tagging_corrections" (
+        `INSERT INTO "Note"."tagging_corrections" (
           note_id, mention_id, original_text_segment, original_mention_type,
           original_source, original_confidence, corrected_text_segment,
           corrected_mention_type, correction_action
@@ -350,9 +350,9 @@ module.exports = (pool) => {
 
       let final_node_id;
 
-      // Step 1: Find or create node in DM.nodes
+      // Step 1: Find or create node in Note.nodes
       const existingNodeRes = await client.query(
-        `SELECT id FROM "DM"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2`,
+        `SELECT id FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2`,
         [name_segment, type]
       );
 
@@ -360,15 +360,15 @@ module.exports = (pool) => {
         final_node_id = existingNodeRes.rows[0].id;
       } else {
         const newNodeRes = await client.query(
-          `INSERT INTO "DM"."nodes" (name, type) VALUES ($1, $2) RETURNING id`,
+          `INSERT INTO "Note"."nodes" (name, type) VALUES ($1, $2) RETURNING id`,
           [name_segment, type]
         );
         final_node_id = newNodeRes.rows[0].id;
       }
 
-      // Step 2: Insert into DM.note_mentions
+      // Step 2: Insert into Note.note_mentions
       const newMentionRes = await client.query(
-        `INSERT INTO "DM"."note_mentions" (
+        `INSERT INTO "Note"."note_mentions" (
           node_id, note_id, start_pos, end_pos, mention_type, source, confidence
         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *`, // Return the newly created mention
@@ -377,9 +377,9 @@ module.exports = (pool) => {
       const new_mention_record = newMentionRes.rows[0];
       const new_mention_id = new_mention_record.id;
 
-      // Step 3: Log to DM.tagging_corrections
+      // Step 3: Log to Note.tagging_corrections
       await client.query(
-        `INSERT INTO "DM"."tagging_corrections" (
+        `INSERT INTO "Note"."tagging_corrections" (
           note_id, mention_id, original_text_segment, original_mention_type,
           original_source, original_confidence, corrected_text_segment,
           corrected_mention_type, correction_action
@@ -432,8 +432,8 @@ module.exports = (pool) => {
       // Step 1: Fetch Mention Details (Before Deleting)
       const mentionDetailsRes = await client.query(
         `SELECT m.note_id, m.start_pos, m.end_pos, m.mention_type, m.source, m.confidence, n.name AS node_name
-         FROM "DM"."note_mentions" m
-         JOIN "DM"."nodes" n ON m.node_id = n.id
+         FROM "Note"."note_mentions" m
+         JOIN "Note"."nodes" n ON m.node_id = n.id
          WHERE m.id = $1`,
         [mentionId]
       );
@@ -451,9 +451,9 @@ module.exports = (pool) => {
       const confidence_to_log = body_confidence !== undefined ? body_confidence : fetchedMention.confidence;
 
 
-      // Step 2: Log to DM.tagging_corrections
+      // Step 2: Log to Note.tagging_corrections
       await client.query(
-        `INSERT INTO "DM"."tagging_corrections" (
+        `INSERT INTO "Note"."tagging_corrections" (
           note_id, mention_id, original_text_segment, original_mention_type,
           original_source, original_confidence, corrected_text_segment,
           corrected_mention_type, correction_action
@@ -465,9 +465,9 @@ module.exports = (pool) => {
         ]
       );
 
-      // Step 3: Delete from DM.note_mentions
+      // Step 3: Delete from Note.note_mentions
       const deleteMentionRes = await client.query(
-        `DELETE FROM "DM"."note_mentions" WHERE id = $1`,
+        `DELETE FROM "Note"."note_mentions" WHERE id = $1`,
         [mentionId]
       );
 

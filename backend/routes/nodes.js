@@ -12,7 +12,7 @@ module.exports = (pool) => {
   
     try {
       const { rows } = await pool.query(
-        `SELECT * FROM "DM"."nodes" WHERE id = $1`,
+        `SELECT * FROM "Note"."nodes" WHERE id = $1`,
         [nodeId]
       );
       if (!rows.length) return res.status(404).json({ error: 'Node not found' });
@@ -34,7 +34,7 @@ module.exports = (pool) => {
       // Get Node A's current name. We need this to find Node B.
       // Lock Node A for the duration of the transaction.
       const nodeARes = await client.query(
-        `SELECT name FROM "DM"."nodes" WHERE id = $1 FOR UPDATE`,
+        `SELECT name FROM "Note"."nodes" WHERE id = $1 FOR UPDATE`,
         [nodeA_ID]
       );
       if (nodeARes.rows.length === 0) {
@@ -46,7 +46,7 @@ module.exports = (pool) => {
       // Check if Node B (target for merge) exists: same name (case-insensitive) as Node A, but with the newType.
       // Lock Node B as well if it exists.
       const nodeBRes = await client.query(`
-        SELECT id FROM "DM"."nodes"
+        SELECT id FROM "Note"."nodes"
         WHERE id != $1
           AND LOWER(name) = LOWER($2)
           AND type = $3
@@ -57,17 +57,17 @@ module.exports = (pool) => {
         // Node B exists, proceed with MERGE logic
         const nodeB_ID = nodeBRes.rows[0].id;
 
-        // 1. Update DM.note_mentions
+        // 1. Update Note.note_mentions
         // All mentions pointing to NodeA_ID should now point to NodeB_ID and have the newType
         await client.query(
-          `UPDATE "DM"."note_mentions" SET node_id = $1, mention_type = $2 WHERE node_id = $3`,
+          `UPDATE "Note"."note_mentions" SET node_id = $1, mention_type = $2 WHERE node_id = $3`,
           [nodeB_ID, newType, nodeA_ID]
         );
 
-        // 2. Update DM.node_links (Source relationships: NodeA -> X  becomes NodeB -> X)
+        // 2. Update Note.node_links (Source relationships: NodeA -> X  becomes NodeB -> X)
         // Get all targets linked from Node A
         const sourceLinksRes = await client.query(
-            `SELECT target_node_id FROM "DM"."node_links" WHERE source_node_id = $1`,
+            `SELECT target_node_id FROM "Note"."node_links" WHERE source_node_id = $1`,
             [nodeA_ID]
         );
         for (const row of sourceLinksRes.rows) {
@@ -77,27 +77,27 @@ module.exports = (pool) => {
 
             // Check if Node B already links to this target
             const existingLinkToTargetRes = await client.query(
-                `SELECT 1 FROM "DM"."node_links" WHERE source_node_id = $1 AND target_node_id = $2`,
+                `SELECT 1 FROM "Note"."node_links" WHERE source_node_id = $1 AND target_node_id = $2`,
                 [nodeB_ID, target_node_id]
             );
             if (existingLinkToTargetRes.rows.length > 0) {
                 // Conflict: Node B already links to this target. Delete Node A's link.
                 await client.query(
-                    `DELETE FROM "DM"."node_links" WHERE source_node_id = $1 AND target_node_id = $2`,
+                    `DELETE FROM "Note"."node_links" WHERE source_node_id = $1 AND target_node_id = $2`,
                     [nodeA_ID, target_node_id]
                 );
             }
         }
         // Update remaining source links from Node A to Node B
         await client.query(
-          `UPDATE "DM"."node_links" SET source_node_id = $1 WHERE source_node_id = $2`,
+          `UPDATE "Note"."node_links" SET source_node_id = $1 WHERE source_node_id = $2`,
           [nodeB_ID, nodeA_ID]
         );
 
-        // 3. Update DM.node_links (Target relationships: X -> NodeA becomes X -> NodeB)
+        // 3. Update Note.node_links (Target relationships: X -> NodeA becomes X -> NodeB)
         // Get all sources linking to Node A
         const targetLinksRes = await client.query(
-            `SELECT source_node_id FROM "DM"."node_links" WHERE target_node_id = $1`,
+            `SELECT source_node_id FROM "Note"."node_links" WHERE target_node_id = $1`,
             [nodeA_ID]
         );
         for (const row of targetLinksRes.rows) {
@@ -107,31 +107,31 @@ module.exports = (pool) => {
 
             // Check if this source already links to Node B
             const existingLinkFromSourceRes = await client.query(
-                `SELECT 1 FROM "DM"."node_links" WHERE source_node_id = $1 AND target_node_id = $2`,
+                `SELECT 1 FROM "Note"."node_links" WHERE source_node_id = $1 AND target_node_id = $2`,
                 [source_node_id, nodeB_ID]
             );
             if (existingLinkFromSourceRes.rows.length > 0) {
                 // Conflict: This source already links to Node B. Delete Node A's incoming link.
                 await client.query(
-                    `DELETE FROM "DM"."node_links" WHERE target_node_id = $1 AND source_node_id = $2`,
+                    `DELETE FROM "Note"."node_links" WHERE target_node_id = $1 AND source_node_id = $2`,
                     [nodeA_ID, source_node_id]
                 );
             }
         }
         // Update remaining target links from Node A to Node B
         await client.query(
-          `UPDATE "DM"."node_links" SET target_node_id = $1 WHERE target_node_id = $2`,
+          `UPDATE "Note"."node_links" SET target_node_id = $1 WHERE target_node_id = $2`,
           [nodeB_ID, nodeA_ID]
         );
 
         // 4. Delete self-loops on Node B that might have been created
         await client.query(
-          `DELETE FROM "DM"."node_links" WHERE source_node_id = $1 AND target_node_id = $1`,
+          `DELETE FROM "Note"."node_links" WHERE source_node_id = $1 AND target_node_id = $1`,
           [nodeB_ID]
         );
 
         // 5. Delete Node A
-        await client.query(`DELETE FROM "DM"."nodes" WHERE id = $1`, [nodeA_ID]);
+        await client.query(`DELETE FROM "Note"."nodes" WHERE id = $1`, [nodeA_ID]);
 
         await client.query('COMMIT');
         res.json({
@@ -144,7 +144,7 @@ module.exports = (pool) => {
       } else {
         // Node B does not exist, just UPDATE Node A's type (original logic)
         const updateResult = await client.query(
-          `UPDATE "DM"."nodes" SET type = $1 WHERE id = $2`,
+          `UPDATE "Note"."nodes" SET type = $1 WHERE id = $2`,
           [newType, nodeA_ID]
         );
 
@@ -183,8 +183,8 @@ module.exports = (pool) => {
     try {
       const { rows } = await pool.query(`
         SELECT m.*, n.content AS note_content
-        FROM "DM"."note_mentions" m
-        JOIN "DM"."notes" n ON m.note_id = n.id
+        FROM "Note"."note_mentions" m
+        JOIN "Note"."notes" n ON m.note_id = n.id
         WHERE m.node_id = $1
         ORDER BY m.note_id DESC
       `, [nodeId]);
@@ -231,7 +231,7 @@ module.exports = (pool) => {
     const name = req.params.name;
     try {
       const { rows } = await pool.query(
-        `SELECT * FROM "DM"."nodes" WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+        `SELECT * FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) LIMIT 1`,
         [name]
       );
       if (rows.length === 0) return res.status(404).json({});

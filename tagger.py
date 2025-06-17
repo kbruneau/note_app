@@ -60,11 +60,11 @@ def build_matcher_from_db(current_nlp, conn):
     print("Building matcher from DB...", file=sys.stderr)
     temp_matcher = PhraseMatcher(current_nlp.vocab, attr="LOWER")
     sources = {
-        "PERSON": [ ("core.names", "name"), ("DM.nodes", "name", "type = 'PERSON'") ],
-        "ITEM": [ ("core.items", "name"), ("core.tools", "name"), ("DM.nodes", "name", "type = 'ITEM'") ],
-        "SPELL": [ ("core.spells", "name"), ("DM.nodes", "name", "type = 'SPELL'") ],
-        "MONSTER": [ ("DM.bestiarys", "name"), ("DM.nodes", "name", "type = 'MONSTER'") ],
-        "LOCATION": [ ("DM.nodes", "name", "type = 'LOCATION'") ]
+        "PERSON": [ ("core.names", "name"), ("Note.nodes", "name", "type = 'PERSON'") ],
+        "ITEM": [ ("core.items", "name"), ("core.tools", "name"), ("Note.nodes", "name", "type = 'ITEM'") ],
+        "SPELL": [ ("core.spells", "name"), ("Note.nodes", "name", "type = 'SPELL'") ],
+        "MONSTER": [ ("DM.bestiarys", "name"), ("Note.nodes", "name", "type = 'MONSTER'") ], # DM.bestiarys is unchanged
+        "LOCATION": [ ("Note.nodes", "name", "type = 'LOCATION'") ]
     }
     for label, tables in sources.items():
         all_terms = []
@@ -204,7 +204,7 @@ def tag_text(text, note_id, db_connection, current_nlp, current_matcher):
             normalized_name = name.strip()
 
             cur.execute("""
-                SELECT id FROM "DM"."nodes"
+                SELECT id FROM "Note"."nodes"
                 WHERE LOWER(name) = LOWER(%s) AND type = %s
             """, (normalized_name, label))
             row = cur.fetchone()
@@ -213,7 +213,7 @@ def tag_text(text, note_id, db_connection, current_nlp, current_matcher):
                 node_id_val = row[0]
             else:
                 cur.execute("""
-                    INSERT INTO "DM"."nodes" (name, type)
+                    INSERT INTO "Note"."nodes" (name, type)
                     VALUES (%s, %s)
                     RETURNING id
                 """, (normalized_name, label))
@@ -227,7 +227,7 @@ def tag_text(text, note_id, db_connection, current_nlp, current_matcher):
             })
 
             cur.execute("""
-                INSERT INTO "DM"."note_mentions"
+                INSERT INTO "Note"."note_mentions"
                 (node_id, note_id, start_pos, end_pos, mention_type, source, confidence)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT DO NOTHING
@@ -238,7 +238,7 @@ def tag_text(text, note_id, db_connection, current_nlp, current_matcher):
             for j in range(i + 1, len(node_ids)):
                 for x, y in [(node_ids[i], node_ids[j]), (node_ids[j], node_ids[i])]:
                     cur.execute("""
-                        INSERT INTO "DM"."node_links" (source_node_id, target_node_id, note_id)
+                        INSERT INTO "Note"."node_links" (source_node_id, target_node_id, note_id)
                         VALUES (%s, %s, %s)
                         ON CONFLICT DO NOTHING
                     """, (x, y, note_id))
@@ -249,7 +249,7 @@ def tag_text(text, note_id, db_connection, current_nlp, current_matcher):
             for node_info in tagged_nodes:
                 if node_info["type"] != "LOCATION":
                     cur.execute("""
-                        INSERT INTO "DM"."node_relationships"
+                        INSERT INTO "Note"."node_relationships"
                         (parent_node_id, child_node_id, relationship_type, note_id)
                         VALUES (%s, %s, 'located_in', %s)
                         ON CONFLICT DO NOTHING
