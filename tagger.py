@@ -5,6 +5,10 @@ import spacy
 from spacy.matcher import PhraseMatcher
 import psycopg2
 from flask import Flask, request, jsonify
+from dotenv import load_dotenv # Added import
+
+# Load environment variables from .env file
+load_dotenv() # Added call
 
 # === Environment Variables & Defaults ===
 DB_NAME = os.environ.get("DB_NAME", "dnd_app")
