@@ -1,40 +1,36 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import apiClient from '../services/apiClient';
 import '../App.css';
-import { useLocation, useParams } from 'react-router-dom'; // Ensure useParams is imported
+import { useLocation, useParams } from 'react-router-dom';
+
+const entityTypesForTagging = ['PERSON', 'LOCATION', 'ITEM', 'SPELL', 'MONSTER', 'OTHER'];
 
 const HomePage = () => {
-  const { entityType } = useParams(); // Get entityType from URL, will be undefined for root path
-  const location = useLocation(); // Still needed for hash linking
+  const { entityType } = useParams();
+  const location = useLocation();
 
-  // Determine current view type based on entityType param or default to 'Notes'
   const currentTypeName = useMemo(() => {
-    if (!entityType) return 'Notes'; // Default for root path
-    // Capitalize first letter, useful for display and matching keys in typeMap
+    if (!entityType) return 'Notes';
     const name = entityType.charAt(0).toUpperCase() + entityType.slice(1);
-    // If your tabOptions array was available, you could validate against it:
-    // const validTabs = ['Notes', 'People', 'Places', 'Items', 'Spells'];
-    // return validTabs.includes(name) ? name : 'Notes'; // Fallback to Notes if entityType is invalid
-    return name; // Assuming entityType from URL will match a defined category
+    return name;
   }, [entityType]);
 
-  const [data, setData] = useState([]); // Holds notes or entities based on currentTypeName
-  const [sortByRecent, setSortByRecent] = useState(true); // Notes specific
-  const [editNoteId, setEditNoteId] = useState(null); // Notes specific
-  const [editContent, setEditContent] = useState(''); // Notes specific
-  const [newNoteContent, setNewNoteContent] = useState(''); // Notes specific
-  const [showNewNoteForm, setShowNewNoteForm] = useState(false); // Notes specific
-  const [submitting, setSubmitting] = useState(false); // General loading/submitting state
+  const [data, setData] = useState([]);
+  const [sortByRecent, setSortByRecent] = useState(true);
+  const [editNoteId, setEditNoteId] = useState(null);
+  const [editContent, setEditContent] = useState('');
+  const [newNoteContent, setNewNoteContent] = useState('');
+  const [showNewNoteForm, setShowNewNoteForm] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
 
-  // FAB tagging menu state - remains as it's tied to note content selection
   const [selection, setSelection] = useState({ text: '', start: null, end: null });
   const [selectedNoteId, setSelectedNoteId] = useState(null);
   const [showFabOptions, setShowFabOptions] = useState(false);
   const [existingNode, setExistingNode] = useState(null);
+  const [newTypeForExistingText, setNewTypeForExistingText] = useState(''); // New state
 
   const [highlightNoteId, setHighlightNoteId] = useState(null);
 
-  // Effect for highlighting note based on URL hash
   useEffect(() => {
     const hash = location.hash;
     if (currentTypeName === 'Notes' && hash.startsWith('#note-')) {
@@ -53,7 +49,6 @@ const HomePage = () => {
     }
   }, [location, data, currentTypeName]);
 
-  // Main data fetching effect based on currentTypeName
   useEffect(() => {
     const typeMap = {
       Notes: 'NOTES',
@@ -77,12 +72,9 @@ const HomePage = () => {
         setSubmitting(false);
       }
     };
-
     fetchData();
   }, [currentTypeName]);
 
-
-  // --- Notes specific functions (to remain, but conditional on currentTypeName) ---
   const handleTextSelect = async (noteId, content) => {
     if (currentTypeName !== 'Notes') return;
     const selectionObj = window.getSelection();
@@ -93,31 +85,32 @@ const HomePage = () => {
     const range = selectionObj.getRangeAt(0);
     const preSelectionRange = range.cloneRange();
 
-    // Attempt to get a reference to the full note content container
     let noteContentContainer = range.startContainer.parentElement;
     while(noteContentContainer && !noteContentContainer.classList.contains('note-content')) {
         noteContentContainer = noteContentContainer.parentElement;
     }
-    if (!noteContentContainer) { // Fallback if specific container not found
+    if (!noteContentContainer) {
         noteContentContainer = document.getElementById(`note-${noteId}`)?.querySelector('.note-content');
     }
+
+    let start, end;
     if (!noteContentContainer) {
         console.warn("Could not determine note content container for accurate offset calculation.");
-        // Fallback to basic indexOf if more accurate offset fails
         const simpleStart = content.indexOf(text);
-        if (simpleStart === -1) return;
-        setSelection({ text, start: simpleStart, end: simpleStart + text.length });
-
+        if (simpleStart === -1) return; // Text not found in content, should not happen
+        start = simpleStart;
+        end = start + text.length;
     } else {
         preSelectionRange.selectNodeContents(noteContentContainer);
         preSelectionRange.setEnd(range.startContainer, range.startOffset);
-        const start = preSelectionRange.toString().length;
-        const end = start + text.length;
-        setSelection({ text, start, end });
+        start = preSelectionRange.toString().length;
+        end = start + text.length;
     }
 
+    setSelection({ text, start, end });
     setSelectedNoteId(noteId);
     setShowFabOptions(true);
+    setNewTypeForExistingText(''); // Reset dropdown
 
     try {
       const res = await apiClient.get(`/nodes/by-name/${encodeURIComponent(text)}`);
@@ -139,33 +132,43 @@ const HomePage = () => {
       setSelection({ text: '', start: null, end: null });
       setSelectedNoteId(null);
       setShowFabOptions(false);
-
       await apiClient.post('/retag-entity-everywhere', { name: selection.text, type: type });
-      // Sidebar data is in MainLayout; consider a shared state or callback if immediate sidebar refresh is needed.
     } catch (err) {
       console.error('Failed to manually tag:', err);
       alert('Error tagging word. Check console. ' + (err.response?.data?.error || err.message));
     }
   };
 
-  const tagWithPersonTag = async (tagLabel) => {
-    if (!selection.text || selectedNoteId == null || currentTypeName !== 'Notes') return;
+  const handleRetagExistingTextAsNewType = async () => {
+    if (!selection.text || selectedNoteId == null || !newTypeForExistingText || currentTypeName !== 'Notes') {
+      alert("Please select a new type for the re-tag action.");
+      return;
+    }
     try {
       await apiClient.post(`/notes/${selectedNoteId}/mentions/add`, {
         name_segment: selection.text,
-        type: 'PERSON',
+        type: newTypeForExistingText,
         start_pos: selection.start,
         end_pos: selection.end
       });
+
+      await apiClient.post('/retag-entity-everywhere', { name: selection.text, type: newTypeForExistingText });
+
       setSelection({ text: '', start: null, end: null });
       setSelectedNoteId(null);
       setShowFabOptions(false);
-
-      await apiClient.post('/retag-entity-everywhere', { name: selection.text, type: 'PERSON' });
+      setNewTypeForExistingText('');
     } catch (err) {
-      console.error('Failed to tag with person tag:', err);
-      alert('Error tagging as Person. Check console. ' + (err.response?.data?.error || err.message));
+      console.error('Failed to re-tag existing text:', err);
+      alert('Error re-tagging. Check console. ' + (err.response?.data?.error || err.message));
     }
+  };
+
+  const tagWithPersonTag = async (tagLabel) => {
+    // This is now effectively the same as tagSelectionManually('PERSON')
+    // The specific tagLabel (e.g. "Player Character") is not directly used to add a tag to DM.nodes here.
+    // That would require a separate mechanism or endpoint.
+    await tagSelectionManually('PERSON');
   };
 
   const startEdit = (note) => {
@@ -272,10 +275,9 @@ const HomePage = () => {
                   onClick={(e) => {
                     e.preventDefault();
                     setHighlightNoteId(n.id);
-                    // Manually update hash, as react-router might not scroll to it if already on page
                     if (window.location.hash !== `#note-${n.id}`) {
                         window.location.hash = `note-${n.id}`;
-                    } else { // If hash is already set, manually trigger scroll again
+                    } else {
                         const el = document.getElementById(`note-${n.id}`);
                         el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     }
@@ -322,8 +324,6 @@ const HomePage = () => {
           {sortedData.map((item) => (
             <li key={item.id}>
               <a href={`/node/${item.id}`} className="entity-link">{item.name}</a>
-              {/* You can display other properties of entities here if needed */}
-              {/* e.g., <p><small>Type: {item.type}</small></p> */}
             </li>
           ))}
         </ul>
@@ -337,18 +337,41 @@ const HomePage = () => {
 
       {currentTypeName === 'Notes' && showFabOptions && (
         <div className="popup-box">
-          <p style={{ marginBottom: '0.5rem' }}>Tag "{selection.text}" as:</p>
+          <p style={{ marginBottom: '0.5rem' }}>Tag "<em>{selection.text}</em>" as:</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {existingNode?.type === 'PERSON' ? (
+            {existingNode ? (
               <>
-                <p><em>{selection.text}</em> is already tagged as a Person.</p>
-                <button onClick={() => tagWithPersonTag('Player Character')}>👤 Add Player Character Tag</button>
-                <button onClick={() => tagWithPersonTag('Party Member')}>👤 Add Party Member Tag</button>
+                <p>This text is already known as: <strong>{existingNode.name}</strong> (Type: {existingNode.type}, Node ID: {existingNode.id}).</p>
+                {existingNode.type === 'PERSON' && (
+                  <>
+                    <button onClick={() => tagWithPersonTag('Player Character')}>👤 Tag this occurrence as Person & (future: add PC tag)</button>
+                    <button onClick={() => tagWithPersonTag('Party Member')}>👤 Tag this occurrence as Person & (future: add Party tag)</button>
+                  </>
+                )}
+                <div className="retag-section">
+                  <p>Or, re-tag this specific instance of "<em>{selection.text}</em>" as:</p>
+                  <select
+                    value={newTypeForExistingText}
+                    onChange={(e) => setNewTypeForExistingText(e.target.value)}
+                  >
+                    <option value="">-- Select New Type --</option>
+                    {entityTypesForTagging.map(type => (
+                      <option key={type} value={type}>{type.charAt(0) + type.slice(1).toLowerCase()}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleRetagExistingTextAsNewType}
+                    disabled={!newTypeForExistingText || newTypeForExistingText === existingNode.type}
+                    className="button"
+                    title={newTypeForExistingText === existingNode.type ? "Select a different type to re-tag this specific mention." : ""}
+                  >
+                    Save as New Type for This Mention Only
+                  </button>
+                </div>
               </>
-            ) : existingNode ? (
-              <p><em>{selection.text}</em> is already tagged as {existingNode.type}.</p>
             ) : (
               <>
+                <p>Tag "<em>{selection.text}</em>" for the first time as:</p>
                 <button onClick={() => tagSelectionManually('PERSON')}>👤 Tag as Person</button>
                 <button onClick={() => tagSelectionManually('LOCATION')}>🏠 Tag as Location</button>
                 <button onClick={() => tagSelectionManually('ITEM')}>📜 Tag as Item</button>
@@ -356,7 +379,7 @@ const HomePage = () => {
                 <button onClick={() => tagSelectionManually('MONSTER')}>💀 Tag as Monster</button>
               </>
             )}
-            <button onClick={() => setShowFabOptions(false)} className="button button-secondary">Cancel</button>
+            <button onClick={() => setShowFabOptions(false)} className="button button-secondary" style={{marginTop: '1rem'}}>Cancel All</button>
           </div>
         </div>
       )}
@@ -364,7 +387,7 @@ const HomePage = () => {
       {currentTypeName === 'Notes' && showNewNoteForm && (
         <div className="popup-box" style={{ bottom: '20px', right: '20px', width: 'auto', minWidth: '300px', maxWidth: '500px' }}>
           <div style={{ margin: '0 auto' }}>
-            <h3 className="form-page-container-subheader">New Note</h3> {/* Using a more generic subheader class */}
+            <h3 className="form-page-container-subheader">New Note</h3>
             <textarea
               value={newNoteContent}
               onChange={(e) => setNewNoteContent(e.target.value)}

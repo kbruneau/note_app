@@ -419,6 +419,28 @@ select {
   margin-bottom: 0; /* No margin for the last button (Cancel) */
 }
 
+/* Styling for re-tag section in FAB popup */
+.retag-section {
+  margin-top: 1rem;
+  border-top: 1px solid var(--border-color);
+  padding-top: 1rem;
+}
+.retag-section p { /* Paragraphs within the retag section */
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  font-size: 0.9em;
+}
+.retag-section select {
+  width: 100%; /* Make select full width */
+  margin-bottom: 0.75rem; /* Space below select */
+}
+.retag-section button { /* Button within retag section */
+  width: 100%; /* Make button full width */
+  padding: 0.5em; /* Adjust padding if needed */
+  font-size: 0.9em; /* Slightly smaller font for this button */
+  /* It will inherit general button styles for color, border-radius, etc. */
+}
+
 
 .modal-backdrop { /* For NodePage correction modal */
   position: fixed;
