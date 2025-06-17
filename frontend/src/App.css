@@ -510,9 +510,20 @@ select {
   background-color: rgba(var(--parchment-bg-color-rgb), 0.2);
   padding: 0.75em;
   border-radius: 4px;
-  white-space: pre-wrap;
+  white-space: pre-wrap; /* Default for snippet (might be multi-line) */
   border-left: 3px solid var(--border-color);
+  /* Default non-expanded view could have a max-height and overflow hidden for long snippets if desired */
+  /* e.g. max-height: 70px; overflow: hidden; text-overflow: ellipsis; */
 }
+
+.mention-snippet.expanded em { /* Styles for when the full note_content is shown */
+  display: block; /* Ensure it takes block for overflow properties */
+  white-space: pre-wrap; /* Preserve whitespace and newlines from note_content */
+  max-height: 300px; /* Example max height for very long notes */
+  overflow-y: auto; /* Add scroll if content overflows this max height */
+  /* Reset any snippet-specific truncation if it was applied */
+}
+
 .mention-snippet mark {
   background-color: #f0d3a3;
   padding: 0 2px;

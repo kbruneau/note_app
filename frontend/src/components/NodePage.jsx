@@ -247,11 +247,14 @@ const NodePage = () => {
                     </button>
                   </div>
                 </div>
-                <div className="mention-snippet" style={{ clear: 'both', paddingTop: '5px' }}>
+                <div
+                  className={`mention-snippet ${expandedNotes.includes(m.note_id) ? 'expanded' : ''}`}
+                  style={{ clear: 'both', paddingTop: '5px' }}
+                >
                   <em>
-                    "{m.snippet || (expandedNotes.includes(m.note_id)
-                      ? m.note_content
-                      : m.note_content?.substring(Math.max(0, m.start_pos - 50), m.end_pos + 50))}"
+                    {expandedNotes.includes(m.note_id)
+                      ? m.note_content  // Show full content when expanded
+                      : m.snippet || 'Snippet not available.'} {/* Use backend-generated snippet when collapsed */}
                   </em>
                 </div>
               </li>

@@ -189,24 +189,38 @@ module.exports = (pool) => {
         ORDER BY m.note_id DESC
       `, [nodeId]);
   
-      // Add a `snippet` field for each mention
-      const mentionsWithSnippets = rows.map(m => {
+      // Add a `snippet` field for each mention with context
+      const mentionsWithContextualSnippets = rows.map(m => {
+        const content = m.note_content || ''; // Ensure content is a string
         const start = m.start_pos;
         const end = m.end_pos;
-        const content = m.note_content || '';
-  
         let snippet = '';
-        if (typeof start === 'number' && typeof end === 'number' && start >= 0 && end > start && end <= content.length) {
-          snippet = content.slice(start, end);
+        const CONTEXT_CHARS = 50; // Number of characters before and after
+
+        if (typeof start === 'number' && typeof end === 'number' && start >= 0 && end >= start && end <= content.length) {
+            const snippetStart = Math.max(0, start - CONTEXT_CHARS);
+            const snippetEnd = Math.min(content.length, end + CONTEXT_CHARS);
+
+            snippet = content.substring(snippetStart, snippetEnd);
+
+            if (snippetStart > 0) { // Check if text was truncated at the beginning
+                snippet = "... " + snippet;
+            }
+            if (snippetEnd < content.length) { // Check if text was truncated at the end
+                snippet = snippet + " ...";
+            }
+        } else {
+            // Fallback if start/end positions are invalid
+            snippet = content.substring(0, 100) + (content.length > 100 ? "..." : "");
         }
   
         return {
           ...m,
-          snippet
+          snippet // This is the new, richer snippet
         };
       });
   
-      res.json(mentionsWithSnippets);
+      res.json(mentionsWithContextualSnippets);
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: 'Failed to fetch mentions', message: err.message });
