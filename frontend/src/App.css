@@ -35,17 +35,24 @@ body {
 }
 
 /* === Layout === */
-.app-container {
+.app-container { /* Root container for the entire app, used in MainLayout.jsx */
   display: flex;
+  flex-direction: column; /* Header on top, content-area below */
   min-height: 100vh;
 }
 
-.app-wrapper {
-  flex-grow: 1;
+.app-content-area { /* Wraps main content and sidebar, child of app-container */
+  display: flex;
+  flex-direction: row; /* Main content and sidebar side-by-side */
+  flex-grow: 1; /* Takes remaining vertical space */
+  overflow: hidden; /* Prevents whole page scroll if children manage their own */
+}
+
+.app-wrapper { /* Main content area (where <Outlet /> renders), child of app-content-area */
+  flex-grow: 1; /* Takes available horizontal space */
   padding: 1rem 2rem;
-  margin-right: 300px;
-  max-width: calc(100% - 300px);
-  overflow-y: auto;
+  overflow-y: auto; /* Allows main content to scroll */
+  /* margin-right and max-width are removed as flexbox handles sidebar spacing */
 }
 
 /* === Page Header Banner (HomePage Top Section) === */
@@ -294,18 +301,16 @@ select {
 
 /* === PC Sidebar === */
 .pc-sidebar {
-  position: fixed;
-  top: 0;
-  right: 0;
-  width: 280px;
-  height: 100vh;
+  width: 300px; /* Fixed width for sidebar */
+  flex-shrink: 0; /* Prevent sidebar from shrinking */
   background-color: var(--container-bg-opaque);
   border-left: 1px solid var(--border-color);
   padding: 1em;
   box-shadow: -3px 0 10px rgba(0, 0, 0, 0.1);
-  overflow-y: auto;
-  z-index: 998;
-  border-radius: 8px 0 0 8px;
+  overflow-y: auto; /* Sidebar content scrolls independently */
+  z-index: 998; /* Keep on top if any positioned elements overlap */
+  /* position:fixed, top, right, height:100vh, border-radius removed for flexbox layout */
+  /* height will be determined by flex parent .app-content-area */
 }
 .pc-sidebar h3 {
   font-family: var(--font-family-cinzel);
@@ -679,26 +684,29 @@ select {
 
 /* Responsive Adjustments */
 @media (max-width: 768px) {
-  .app-container {
+  .app-content-area { /* Target this to stack main and sidebar */
     flex-direction: column;
   }
   .app-wrapper {
     padding: 1rem;
-    margin-right: 0;
-    max-width: 100%;
+    /* margin-right: 0; -- No longer needed */
+    /* max-width: 100%; -- No longer needed */
+     order: 1; /* Main content first */
   }
   .pc-sidebar {
-    position: relative;
-    width: 100%;
-    height: auto;
+    width: 100%; /* Full width on mobile */
+    height: auto; /* Auto height based on content */
     border-left: none;
     border-top: 2px solid var(--accent-color-primary);
     box-shadow: none;
     border-radius: 0;
     margin-top: 1rem;
+    order: 2; /* Sidebar second */
+    /* flex-shrink will apply if parent is still flex, which it is */
   }
-  .fab, .popup-box {
+  .fab, .popup-box { /* FAB may need repositioning if sidebar is not fixed */
     right: 15px;
+    bottom: 15px; /* Ensure FAB is not off-screen */
     margin-right: 0;
   }
   .popup-box {
