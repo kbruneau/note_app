@@ -188,7 +188,6 @@ const MainLayout = () => {
           )) : <p>No Party Members found.</p>}
         </div>
       </div>
-      </div>
   );
 };
 

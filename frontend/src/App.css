@@ -312,16 +312,44 @@ select {
   /* position:fixed, top, right, height:100vh, border-radius removed for flexbox layout */
   /* height will be determined by flex parent .app-content-area */
 }
-.pc-sidebar h3 { /* This is now part of .sidebar-section-header */
+
+.sidebar-section-header {
+  display: flex;
+  /* justify-content: space-between; -- Removed for closer button */
+  justify-content: flex-start; /* Align items to the start */
+  align-items: center;
+  gap: 0.5em; /* Use gap for spacing between title and button */
+  margin-bottom: 0.75rem;
+}
+
+.pc-sidebar h3 {
   font-family: var(--font-family-cinzel);
   font-size: 1.3em;
-  /* margin-top: 0.5em; Removed, handled by parent */
-  margin-bottom: 0; /* Removed, handled by parent */
+  margin-top: 0;
+  margin-bottom: 0;
   color: var(--text-color-headers);
   border-bottom: 1px solid var(--border-color);
   padding-bottom: 0.3em;
-  flex-grow: 1;
+  /* flex-grow: 1; -- Removed, title takes natural width */
 }
+
+.button-sort-sidebar {
+  font-family: var(--font-family-body);
+  font-size: 0.75em;
+  padding: 0.2em 0.5em;
+  /* margin-left: 0.5em; -- Removed, using gap on parent */
+  background-color: var(--container-bg-color);
+  color: var(--text-color-main);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.button-sort-sidebar:hover {
+  background-color: var(--border-color);
+  color: var(--text-color-headers);
+}
+
 .pc-tile {
   background: rgba(245, 222, 179, 0.3);
   border: 1px solid var(--border-color);
@@ -774,3 +802,11 @@ select {
     padding: 1.5em;
   }
 }
+
+[end of frontend/src/App.css]
+
+[end of frontend/src/App.css]
+
+[end of frontend/src/App.css]
+
+[end of frontend/src/App.css]
