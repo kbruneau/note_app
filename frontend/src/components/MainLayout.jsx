@@ -140,8 +140,8 @@ const MainLayout = () => {
         <div className="pc-sidebar"> {/* Second child of app-content-area */}
           <div className="sidebar-section-header">
             <h3>Player Characters</h3>
-            <button onClick={() => handleSortToggle('pc')} className="button-icon button-sort-sidebar" title={`Sort PC List (${pcSortMode})`}>
-              {pcSortMode === 'current' ? 'A-Z' : pcSortMode === 'az' ? 'Z-A' : ' デフォルト'} {/* Default/Original sort order */}
+            <button onClick={() => handleSortToggle('pc')} className="button-icon button-sort-sidebar" title={`Change sort order for Player Characters`}>
+              {pcSortMode === 'current' ? 'Sort A-Z' : pcSortMode === 'az' ? 'Sort Z-A' : 'Original Order'}
             </button>
           </div>
           {displayedPcs.length > 0 ? displayedPcs.map((pc) => (
@@ -165,8 +165,8 @@ const MainLayout = () => {
 
           <div className="sidebar-section-header">
             <h3>Party Members</h3>
-            <button onClick={() => handleSortToggle('party')} className="button-icon button-sort-sidebar" title={`Sort Party List (${partySortMode})`}>
-              {partySortMode === 'current' ? 'A-Z' : partySortMode === 'az' ? 'Z-A' : 'デフォルト'}
+            <button onClick={() => handleSortToggle('party')} className="button-icon button-sort-sidebar" title={`Change sort order for Party Members`}>
+              {partySortMode === 'current' ? 'Sort A-Z' : partySortMode === 'az' ? 'Sort Z-A' : 'Original Order'}
             </button>
           </div>
           {displayedPartyMembers.length > 0 ? displayedPartyMembers.map((member) => (
@@ -187,7 +187,6 @@ const MainLayout = () => {
             </div>
           )) : <p>No Party Members found.</p>}
         </div>
-      </div>
       </div>
   );
 };
