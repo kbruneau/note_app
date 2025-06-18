@@ -16,8 +16,8 @@ const MainLayout = () => {
   const [activeTab, setActiveTab] = useState('Notes');
   const [playerCharacters, setPlayerCharacters] = useState([]);
   const [partyMembers, setPartyMembers] = useState([]);
-  const [pcSortMode, setPcSortMode] = useState('current'); // 'current', 'az', 'za'
-  const [partySortMode, setPartySortMode] = useState('current'); // 'current', 'az', 'za'
+  const [pcSortMode, setPcSortMode] = useState('az'); // Only 'az' or 'za'
+  const [partySortMode, setPartySortMode] = useState('az');
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -82,17 +82,9 @@ const MainLayout = () => {
 
   const handleSortToggle = (listType) => {
     if (listType === 'pc') {
-      setPcSortMode(prevMode => {
-        if (prevMode === 'current') return 'az';
-        if (prevMode === 'az') return 'za';
-        return 'current';
-      });
+      setPcSortMode(prevMode => prevMode === 'az' ? 'za' : 'az');
     } else if (listType === 'party') {
-      setPartySortMode(prevMode => {
-        if (prevMode === 'current') return 'az';
-        if (prevMode === 'az') return 'za';
-        return 'current';
-      });
+      setPartySortMode(prevMode => prevMode === 'az' ? 'za' : 'az');
     }
   };
 
@@ -141,7 +133,7 @@ const MainLayout = () => {
           <div className="sidebar-section-header">
             <h3>Player Characters</h3>
             <button onClick={() => handleSortToggle('pc')} className="button-icon button-sort-sidebar" title={`Change sort order for Player Characters`}>
-              {pcSortMode === 'current' ? 'Sort A-Z' : pcSortMode === 'az' ? 'Sort Z-A' : 'Original Order'}
+              {pcSortMode === 'az' ? 'Sort A-Z' : 'Sort Z-A'}
             </button>
           </div>
           {displayedPcs.length > 0 ? displayedPcs.map((pc) => (
@@ -166,7 +158,7 @@ const MainLayout = () => {
           <div className="sidebar-section-header">
             <h3>Party Members</h3>
             <button onClick={() => handleSortToggle('party')} className="button-icon button-sort-sidebar" title={`Change sort order for Party Members`}>
-              {partySortMode === 'current' ? 'Sort A-Z' : partySortMode === 'az' ? 'Sort Z-A' : 'Original Order'}
+              {partySortMode === 'az' ? 'Sort A-Z' : 'Sort Z-A'}
             </button>
           </div>
           {displayedPartyMembers.length > 0 ? displayedPartyMembers.map((member) => (
@@ -187,6 +179,7 @@ const MainLayout = () => {
             </div>
           )) : <p>No Party Members found.</p>}
         </div>
+      </div>
       </div>
   );
 };
