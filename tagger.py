@@ -13,9 +13,14 @@ load_dotenv() # Added call
 # === Environment Variables & Defaults ===
 DB_NAME = os.environ.get("DB_NAME", "dnd_app")
 DB_USER = os.environ.get("DB_USER", "postgres")
-DB_PASSWORD = os.environ.get("DB_PASSWORD", "Paisley95")
-DB_HOST = os.environ.get("DB_HOST", "32.220.174.183")
+DB_PASSWORD = os.environ.get("DB_PASSWORD") # No default for password
+DB_HOST = os.environ.get("DB_HOST", "localhost") # Default to localhost
 DB_PORT = os.environ.get("DB_PORT", "5432")
+
+# Startup check for essential environment variables
+if DB_PASSWORD is None:
+    print("Error: Missing required environment variable DB_PASSWORD. Please set it in your .env file or environment.", file=sys.stderr)
+    sys.exit(1)
 
 # === Global NLP Model and Matcher ===
 nlp = spacy.load("en_core_web_sm")
