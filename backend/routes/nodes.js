@@ -22,6 +22,69 @@ module.exports = (pool) => {
     }
   });
 
+  // Remove a specific tag from a node
+  router.delete('/nodes/:nodeId/tags', async (req, res) => {
+    const { nodeId: nodeIdParam } = req.params;
+    const nodeId = parseInt(nodeIdParam, 10);
+    const { tag_to_remove } = req.body;
+
+    if (isNaN(nodeId)) {
+      return res.status(400).json({ error: 'Invalid node ID.' });
+    }
+    if (!tag_to_remove || typeof tag_to_remove !== 'string' || tag_to_remove.trim() === '') {
+      return res.status(400).json({ error: 'tag_to_remove must be a non-empty string.' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      const nodeRes = await client.query(
+        `SELECT id, name, tags FROM "Note"."nodes" WHERE id = $1 FOR UPDATE`,
+        [nodeId]
+      );
+
+      if (nodeRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Node not found.' });
+      }
+
+      const currentNode = nodeRes.rows[0];
+      let tagsChanged = false;
+      let finalMessage = `Tag '${tag_to_remove}' not found on node or node had no tags. No changes made.`;
+
+      if (currentNode.tags && currentNode.tags.includes(tag_to_remove)) {
+        const newTags = currentNode.tags.filter(tag => tag !== tag_to_remove);
+
+        // Handle empty array case for SQL: should be NULL or an empty array literal {}
+        const dbTags = newTags.length > 0 ? newTags : null; // Or an empty array literal '{}' if your DB prefers
+
+        const updateRes = await client.query(
+          `UPDATE "Note"."nodes" SET tags = $1 WHERE id = $2`,
+          [dbTags, nodeId]
+        );
+
+        if (updateRes.rowCount === 0) {
+          // Should not happen due to FOR UPDATE lock and prior check
+          await client.query('ROLLBACK');
+          return res.status(500).json({ error: 'Failed to update node tags due to concurrent modification.' });
+        }
+        tagsChanged = true;
+        finalMessage = `Tag '${tag_to_remove}' removed successfully from node '${currentNode.name}'.`;
+      }
+
+      await client.query('COMMIT');
+      res.json({ success: true, message: finalMessage, tags_changed: tagsChanged, current_tags: tagsChanged ? (currentNode.tags.filter(tag => tag !== tag_to_remove)) : currentNode.tags });
+
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('🔥 Failed to remove tag from node:', err);
+      res.status(500).json({ error: 'Failed to remove tag', message: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
   router.patch('/nodes/:id/type', async (req, res) => {
     const nodeId = parseInt(req.params.id, 10);
     const { newType } = req.body;

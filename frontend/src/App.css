@@ -312,14 +312,15 @@ select {
   /* position:fixed, top, right, height:100vh, border-radius removed for flexbox layout */
   /* height will be determined by flex parent .app-content-area */
 }
-.pc-sidebar h3 {
+.pc-sidebar h3 { /* This is now part of .sidebar-section-header */
   font-family: var(--font-family-cinzel);
   font-size: 1.3em;
-  margin-top: 0.5em;
-  margin-bottom: 1rem;
+  /* margin-top: 0.5em; Removed, handled by parent */
+  margin-bottom: 0; /* Removed, handled by parent */
   color: var(--text-color-headers);
   border-bottom: 1px solid var(--border-color);
   padding-bottom: 0.3em;
+  flex-grow: 1;
 }
 .pc-tile {
   background: rgba(245, 222, 179, 0.3);
@@ -328,6 +329,12 @@ select {
   padding: 0.75rem;
   margin-bottom: 1rem;
   box-shadow: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+.pc-tile-info {
+  flex-grow: 1;
 }
 .pc-tile h4 {
   margin: 0 0 0.25em 0;
@@ -345,6 +352,33 @@ select {
 }
 .tag.pc { background: var(--accent-color-primary); }
 .tag.party { background: var(--accent-color-secondary); }
+.pc-general-tag, .party-general-tag {
+  background-color: var(--border-color);
+  color: var(--text-color-main);
+  font-size: 0.7em;
+  margin-right: 3px;
+}
+
+.button-remove-sidebar-tag {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-color-main);
+  opacity: 0.5;
+  font-size: 1.2rem;
+  line-height: 1;
+  padding: 0.1em 0.3em;
+  border-radius: 50%;
+  cursor: pointer;
+  margin-left: 0.5rem;
+  flex-shrink: 0;
+}
+.button-remove-sidebar-tag:hover {
+  background-color: rgba(255, 0, 0, 0.1);
+  color: red;
+  opacity: 1;
+  border-color: red;
+}
+
 
 /* === Entity Tags (General) === */
 .tag {
@@ -409,14 +443,14 @@ select {
 .popup-box button {
   display: flex;
   align-items: center;
-  gap: 0.75em; /* Increased gap for better icon spacing */
-  width: 100%; /* Make buttons full width of popup */
-  justify-content: flex-start; /* Align icon and text to the left */
-  margin-bottom: 0.5rem; /* Space between buttons */
-  padding: 0.6em 1em; /* Adjusted padding for better feel */
+  gap: 0.75em;
+  width: 100%;
+  justify-content: flex-start;
+  margin-bottom: 0.5rem;
+  padding: 0.6em 1em;
 }
 .popup-box button:last-child {
-  margin-bottom: 0; /* No margin for the last button (Cancel) */
+  margin-bottom: 0;
 }
 
 /* Styling for re-tag section in FAB popup */
@@ -425,20 +459,19 @@ select {
   border-top: 1px solid var(--border-color);
   padding-top: 1rem;
 }
-.retag-section p { /* Paragraphs within the retag section */
+.retag-section p {
   margin-top: 0;
   margin-bottom: 0.5rem;
   font-size: 0.9em;
 }
 .retag-section select {
-  width: 100%; /* Make select full width */
-  margin-bottom: 0.75rem; /* Space below select */
+  width: 100%;
+  margin-bottom: 0.75rem;
 }
-.retag-section button { /* Button within retag section */
-  width: 100%; /* Make button full width */
-  padding: 0.5em; /* Adjust padding if needed */
-  font-size: 0.9em; /* Slightly smaller font for this button */
-  /* It will inherit general button styles for color, border-radius, etc. */
+.retag-section button {
+  width: 100%;
+  padding: 0.5em;
+  font-size: 0.9em;
 }
 
 
@@ -741,5 +774,7 @@ select {
     padding: 1.5em;
   }
 }
+
+[end of frontend/src/App.css]
 
 [end of frontend/src/App.css]
