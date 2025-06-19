@@ -194,6 +194,26 @@ const NodePage = () => {
     }
   };
 
+  const handleQuickConfirm = async (mentionId) => {
+    try {
+      const response = await apiClient.post(`/mentions/${mentionId}/confirm`);
+      const confirmedMention = response.data.updated_mention; // Backend returns the updated mention
+
+      setMentions(prevMentions =>
+        prevMentions.map(m =>
+          m.id === mentionId
+            ? { ...m, ...confirmedMention, snippet: m.snippet, note_content: m.note_content } // Preserve client-side fields if not in confirmedMention
+            : m
+        )
+      );
+      // Optionally, show a success notification
+      // alert("Mention confirmed!");
+    } catch (error) {
+      console.error('Failed to quick confirm mention:', error);
+      alert('Failed to confirm mention: ' + (error.response?.data?.message || error.message));
+    }
+  };
+
 
   return (
     <div className="app-wrapper">
@@ -227,7 +247,14 @@ const NodePage = () => {
                     In Note <Link to={`/#note-${m.note_id}`}>#{m.note_id}</Link>:
                     Type: {formatType(m.mention_type)} (Conf: {m.confidence?.toFixed(2)}, Src: {m.source})
                   </span>
-                  <div style={{ float: 'right' }}>
+                  <div className="mention-actions"> {/* Changed from style float to a class for better control */}
+                    {!['USER_CONFIRMED', 'USER_ADDED', 'PHRASEMATCHER_EXACT'].includes(m.source) && (
+                      <button
+                        onClick={() => handleQuickConfirm(m.id)}
+                        className="button-icon button-quick-confirm"
+                        title="Quick Confirm Tag"
+                      > ✔️ </button>
+                    )}
                     <button
                       onClick={() => handleOpenEditModal(m)}
                       className="button-icon"

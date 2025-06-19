@@ -490,5 +490,94 @@ module.exports = (pool) => {
     }
   });
 
+  // Confirm an existing mention
+  router.post('/mentions/:mentionId/confirm', async (req, res) => {
+    const { mentionId: mentionIdParam } = req.params;
+    const mentionId = parseInt(mentionIdParam, 10);
+
+    if (isNaN(mentionId)) {
+      return res.status(400).json({ error: 'Invalid mentionId parameter.' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Step 1: Fetch current mention and its node's name, and lock the mention row
+      const originalMentionRes = await client.query(
+        `SELECT
+            m.id, m.note_id, m.node_id, m.start_pos, m.end_pos, m.mention_type,
+            m.source AS original_source, m.confidence AS original_confidence,
+            n.name AS node_name
+         FROM "Note"."note_mentions" m
+         JOIN "Note"."nodes" n ON m.node_id = n.id
+         WHERE m.id = $1
+         FOR UPDATE OF m;`,
+        [mentionId]
+      );
+
+      if (originalMentionRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Mention not found.' });
+      }
+      const originalMention = originalMentionRes.rows[0];
+
+      // Step 2: Update the mention's source and confidence
+      const updatedMentionRes = await client.query(
+        `UPDATE "Note"."note_mentions"
+         SET source = $1, confidence = $2
+         WHERE id = $3
+         RETURNING *;`,
+        ['USER_CONFIRMED', 1.0, mentionId]
+      );
+
+      if (updatedMentionRes.rowCount === 0) {
+        // Should not happen if the FOR UPDATE lock worked and the row existed
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Mention not found for update (concurrent modification issue?).' });
+      }
+      const updatedMention = updatedMentionRes.rows[0];
+
+      // Step 3: Log to Note.tagging_corrections
+      await client.query(
+        `INSERT INTO "Note"."tagging_corrections"
+          (note_id, mention_id, original_text_segment, original_mention_type,
+          original_source, original_confidence, corrected_text_segment,
+          corrected_mention_type, correction_action, user_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP);`,
+        [
+          originalMention.note_id,
+          mentionId,
+          originalMention.node_name, // original_text_segment
+          originalMention.mention_type, // original_mention_type
+          originalMention.original_source,
+          originalMention.original_confidence,
+          originalMention.node_name, // corrected_text_segment (not changed)
+          originalMention.mention_type, // corrected_mention_type (not changed)
+          'CONFIRM_TAG', // correction_action
+          null // user_id
+        ]
+      );
+
+      await client.query('COMMIT');
+      res.json({
+        success: true,
+        message: "Mention confirmed successfully",
+        // Combine updated mention fields with the original node_name for a complete response object
+        updated_mention: {
+          ...updatedMention,
+          node_name: originalMention.node_name
+        }
+      });
+
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('🔥 Failed to confirm mention:', err);
+      res.status(500).json({ error: 'Failed to confirm mention', message: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
   return router;
 };

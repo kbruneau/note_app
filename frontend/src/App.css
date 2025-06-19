@@ -584,11 +584,28 @@ select {
 }
 .mention-entry .entity-meta span {
   font-family: var(--font-family-body);
+  margin-right: auto; /* Push buttons to the right */
+}
+.mention-actions { /* Container for mention action buttons */
+  display: flex;
+  align-items: center;
+  margin-left: 0.5em; /* Space from the text part of entity-meta */
 }
 .mention-entry .entity-meta .button-icon {
   font-size: 1rem;
   padding: 0.2rem;
+  margin: 0 0.1em; /* Tighter margin for these icons */
 }
+
+.button-quick-confirm {
+  /* Inherits from .button-icon */
+  color: #27ae60; /* Green color for confirm */
+}
+.button-quick-confirm:hover, .button-quick-confirm:focus {
+  color: #229954; /* Darker green */
+  background-color: rgba(46, 204, 113, 0.1) !important; /* Light green background on hover, ensure it overrides other .button-icon hover if any */
+}
+
 
 .mention-snippet {
   font-style: italic;
