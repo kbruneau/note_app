@@ -112,9 +112,6 @@ CREATE TABLE IF NOT EXISTS "Note"."node_links" (
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
     -- Removed UNIQUE constraint from here
 );
-COMMENT ON COLUMN "Note"."node_links"."relationship_type" IS 'Describes the nature of the link (e.g., related, allied_with).';
-COMMENT ON COLUMN "Note"."node_links"."description" IS 'Optional text describing the link.';
-COMMENT ON COLUMN "Note"."node_links"."note_id" IS 'ID of the note from which this link might have been inferred.';
 
 -- Conditionally add relationship_type column to Note.node_links if it doesn't exist
 DO $$
@@ -132,6 +129,10 @@ BEGIN
         RAISE NOTICE 'Column relationship_type already exists in Note.node_links table.';
     END IF;
 END $$;
+
+COMMENT ON COLUMN "Note"."node_links"."relationship_type" IS 'Describes the nature of the link (e.g., related, allied_with).';
+COMMENT ON COLUMN "Note"."node_links"."description" IS 'Optional text describing the link.';
+COMMENT ON COLUMN "Note"."node_links"."note_id" IS 'ID of the note from which this link might have been inferred.';
 
 
 CREATE TABLE IF NOT EXISTS "Note"."node_relationships" (
