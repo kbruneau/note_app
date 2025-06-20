@@ -8,50 +8,52 @@ module.exports = (pool) => {
 
   // Add a new note
   router.post('/add-note', async (req, res) => {
-    const { content } = req.body;
+    const { content, title } = req.body; // Add title to destructuring
     if (!content) return res.status(400).json({ error: 'Missing note content' });
 
-    // The route does not seem to use explicit transactions for the initial note insert
-    // in the provided code. If it did, client acquisition/release would be here.
-    // For this subtask, we'll assume pool.query is acceptable for the initial insert,
-    // or that a higher-level mechanism handles client management if this route were part of a larger transaction.
-
-    let noteId;
-    let createdAt;
+    // Using a client for explicit transaction for note insert
+    const client = await pool.connect();
+    let newNote;
 
     try {
-      // Step 1: Insert the note into the database
-      const noteInsertResult = await pool.query(
-        `INSERT INTO "Note"."notes" (content) VALUES ($1) RETURNING id, created_at`,
-        [content]
+      await client.query('BEGIN');
+      // Step 1: Insert the note into the database, including title
+      const noteInsertResult = await client.query(
+        `INSERT INTO "Note"."notes" (content, title) VALUES ($1, $2) RETURNING id, title, content, created_at`,
+        [content, title || null] // Use title or null if not provided
       );
-      noteId = noteInsertResult.rows[0].id;
-      createdAt = noteInsertResult.rows[0].created_at;
+      newNote = noteInsertResult.rows[0];
+      await client.query('COMMIT');
+    } catch (dbError) {
+      await client.query('ROLLBACK');
+      console.error('🔥 Database error in add-note (initial insert):', dbError);
+      return res.status(500).json({ error: 'Failed to save note', message: dbError.message });
+    } finally {
+      client.release();
+    }
 
-      // Step 2: Call the tagger service
-      try {
-        const taggerPayload = { note_id: noteId, text: content };
-        const taggerServiceUrl = 'http://localhost:5001/tag'; // Tagger service URL
-        const taggerResponse = await axios.post(taggerServiceUrl, taggerPayload);
-        const taggedNodes = taggerResponse.data;
+    // Step 2: Call the tagger service (outside the initial DB transaction for note creation)
+    try {
+      // Use newNote.content and newNote.id for consistency, as title is now part of newNote
+      const taggerPayload = { note_id: newNote.id, text: newNote.content };
+      const taggerServiceUrl = 'http://localhost:5001/tag';
+      const taggerResponse = await axios.post(taggerServiceUrl, taggerPayload);
+      const taggedNodes = taggerResponse.data;
 
-        return res.json({
-          success: true,
-          id: noteId,
-          created_at: createdAt,
-          nodes: taggedNodes
-        });
+      return res.status(201).json({ // Return 201 for successful creation
+        success: true,
+        note: newNote, // Return the full new note object
+        nodes: taggedNodes // Keep tagged nodes if frontend uses them
+      });
 
-      } catch (taggerError) {
-        console.error('Error calling tagger service:', taggerError.message);
-        // Note exists, but tagging failed. Respond with note details and error.
-        // The client might want to inform the user that the note was saved but entities couldn't be auto-tagged.
-        return res.status(500).json({
-          error: 'Note saved, but tagging service failed.',
-          message: taggerError.message,
-          note_id: noteId,
-          created_at: createdAt,
-          tagger_error_details: taggerError.response ? taggerError.response.data : "No response data" // Include tagger's error if available
+    } catch (taggerError) {
+      console.error('Error calling tagger service:', taggerError.message);
+      return res.status(500).json({
+        success: true, // Note was created
+        note: newNote, // Return created note
+        error: 'Note saved, but tagging service failed.',
+        message: taggerError.message,
+        tagger_error_details: taggerError.response ? taggerError.response.data : "No response data"
         });
       }
 
@@ -63,15 +65,14 @@ module.exports = (pool) => {
         res.status(500).json({ error: 'Failed to save note', message: dbError.message });
       }
     }
-    // No explicit client.release() here as pool.query handles it,
-    // or client lifecycle is managed by a yet-to-be-implemented outer transaction scope.
+    // client for tagger service call is managed by axios
   });
 
   // Get all notes
   router.get('/notes', async (req, res) => {
     try {
       const { rows } = await pool.query(`
-        SELECT id, content, created_at
+        SELECT id, title, content, created_at
         FROM "Note"."notes"
         ORDER BY created_at DESC
       `);
@@ -84,61 +85,98 @@ module.exports = (pool) => {
   // Update a note
   router.put('/notes/:id', async (req, res) => {
     const { id } = req.params;
-    const { content } = req.body;
-    const client = await pool.connect(); // Acquire client
+    const noteId = parseInt(id, 10);
+    const { content, title } = req.body; // Add title
+
+    if (isNaN(noteId)) {
+      return res.status(400).json({ error: 'Invalid note ID.' });
+    }
+
+    // Ensure at least one field is being updated
+    if (content === undefined && title === undefined) {
+      return res.status(400).json({ error: 'No fields provided for update. Send at least title or content.' });
+    }
+
+    const client = await pool.connect();
+    let updatedNoteContentForTagger = content; // Default to new content if provided
 
     try {
-      // Start transaction for database operations
       await client.query('BEGIN');
-      await client.query(`UPDATE "Note"."notes" SET content = $1 WHERE id = $2`, [content, id]);
-      await client.query(`DELETE FROM "Note"."note_mentions" WHERE note_id = $1`, [id]);
-      await client.query(`DELETE FROM "Note"."node_links" WHERE note_id = $1`, [id]);
-      await client.query('COMMIT'); // Commit database changes before calling tagger
 
-      // Now call the tagger service
+      // Dynamically build the SET clause
+      const setClauses = [];
+      const queryParams = [];
+      let paramIndex = 1;
+
+      if (title !== undefined) { // Allows setting title to null or empty string explicitly
+        setClauses.push(`title = $${paramIndex++}`);
+        queryParams.push(title);
+      }
+      if (content !== undefined) {
+        setClauses.push(`content = $${paramIndex++}`);
+        queryParams.push(content);
+      }
+
+      queryParams.push(noteId); // For WHERE id = $N
+
+      if (setClauses.length === 0) {
+         // Should be caught by the undefined check above, but as a safeguard
+        await client.query('ROLLBACK'); // No actual changes to make
+        client.release();
+        return res.status(400).json({ error: "No content or title provided for update." });
+      }
+
+      const updateQuery = `UPDATE "Note"."notes" SET ${setClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${paramIndex} RETURNING id, title, content, created_at, updated_at;`;
+
+      const updateResult = await client.query(updateQuery, queryParams);
+
+      if (updateResult.rowCount === 0) {
+        await client.query('ROLLBACK');
+        client.release();
+        return res.status(404).json({ error: 'Note not found or not updated.' });
+      }
+
+      const updatedNoteFromDB = updateResult.rows[0];
+      updatedNoteContentForTagger = updatedNoteFromDB.content; // Use the actual content from DB for tagger
+
+      // Clear existing mentions and links as content/context might have changed
+      await client.query(`DELETE FROM "Note"."note_mentions" WHERE note_id = $1`, [noteId]);
+      await client.query(`DELETE FROM "Note"."node_links" WHERE note_id = $1`, [noteId]);
+
+      await client.query('COMMIT');
+
+      // Call tagger service after successful DB update
       try {
-        const taggerPayload = { note_id: id, text: content };
+        const taggerPayload = { note_id: noteId, text: updatedNoteContentForTagger };
         const taggerServiceUrl = 'http://localhost:5001/tag';
-        // We don't necessarily need the response data from the tagger for the client here,
-        // but we wait for it to complete.
-        await axios.post(taggerServiceUrl, taggerPayload);
+        const taggerResponse = await axios.post(taggerServiceUrl, taggerPayload);
 
-        res.json({ success: true, message: "Note updated and retagged successfully." });
+        res.json({
+          success: true,
+          message: "Note updated and retagged successfully.",
+          note: updatedNoteFromDB, // Send back the fully updated note
+          nodes: taggerResponse.data // Send back new tags
+        });
 
       } catch (taggerError) {
-        console.error(`Error calling tagger service during note update for ID ${id}:`, taggerError.message);
-        // Note was updated in the DB, but re-tagging failed.
-        // It's important to still send a 2xx success for the DB update, but with an error message for tagging.
-        // However, the client might interpret a 500 as a complete failure of the PUT.
-        // A more nuanced approach could be a 207 Multi-Status, but for now, let's indicate primary success with a warning.
-        // Or, as per instructions, a 500 but with success:true for the DB part.
+        console.error(`Error calling tagger service during note update for ID ${noteId}:`, taggerError.message);
         res.status(500).json({
-          success: true, // Indicates DB update was fine
+          success: true, // DB update was successful
+          note: updatedNoteFromDB,
           error: 'Note updated, but re-tagging service failed.',
           message: taggerError.message,
-          note_id: id,
           tagger_error_details: taggerError.response ? taggerError.response.data : "No response data"
         });
       }
 
     } catch (dbError) {
-      // This catch block is for errors during the DB transaction (BEGIN, UPDATE, DELETEs, COMMIT)
-      if (client) {
-        try {
-          await client.query('ROLLBACK');
-        } catch (rollbackErr) {
-          console.error('🔥 Failed to rollback transaction:', rollbackErr);
-        }
-      }
-      console.error(`🔥 Database error updating note ID ${id}:`, dbError);
-      // Ensure a response is only sent if one hasn't been already (by tagger error handling, though less likely here)
+      await client.query('ROLLBACK');
+      console.error(`🔥 Database error updating note ID ${noteId}:`, dbError);
       if (!res.headersSent) {
         res.status(500).json({ success: false, error: 'Failed to update note', message: dbError.message });
       }
     } finally {
-      if (client) {
-        client.release(); // Release client in finally block
-      }
+      client.release();
     }
   });
 

@@ -20,6 +20,7 @@ const HomePage = () => {
   const [editNoteId, setEditNoteId] = useState(null);
   const [editContent, setEditContent] = useState('');
   const [newNoteContent, setNewNoteContent] = useState('');
+  const [newNoteTitle, setNewNoteTitle] = useState(''); // Added state for new note title
   const [showNewNoteForm, setShowNewNoteForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
@@ -210,17 +211,26 @@ const HomePage = () => {
   };
 
   const submitNewNote = async () => {
-    if (!newNoteContent.trim()) return;
+    if (!newNoteContent.trim()) return; // Keep check for content
     setSubmitting(true);
     try {
-      const res = await apiClient.post('/add-note', { content: newNoteContent });
-      const newNoteData = res.data;
+      const payload = {
+        content: newNoteContent,
+        title: newNoteTitle.trim() // Include title in payload
+      };
+      const res = await apiClient.post('/add-note', payload);
+      // Backend response for /add-note now includes a 'note' object with id, title, content, created_at
+      // and a 'nodes' array for tagged entities.
+      const newNoteData = res.data.note;
+
       const newNoteToAdd = {
         id: newNoteData.id,
-        content: newNoteContent,
+        title: newNoteData.title, // Use title from backend response
+        content: newNoteData.content, // Use content from backend response
         created_at: newNoteData.created_at,
       };
       setData(currentData => [newNoteToAdd, ...currentData]);
+      setNewNoteTitle(''); // Reset title state
       setNewNoteContent('');
       setShowNewNoteForm(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -284,7 +294,7 @@ const HomePage = () => {
                   }}
                   className="entity-link"
                 >
-                  <strong>Note #{n.id}</strong>
+                  <strong>{n.title || `Note #${n.id}`}</strong>
                 </a>
                 <em className="note-timestamp">
                   ({new Date(n.created_at).toLocaleString()})
@@ -385,12 +395,26 @@ const HomePage = () => {
       )}
 
       {currentTypeName === 'Notes' && showNewNoteForm && (
-        <div className="popup-box" style={{ bottom: '20px', right: '20px', width: 'auto', minWidth: '300px', maxWidth: '500px' }}>
+        <div className="popup-box" style={{ bottom: '20px', right: '20px', width: 'auto', minWidth: '350px', maxWidth: '600px' }}> {/* Adjusted size */}
           <div style={{ margin: '0 auto' }}>
             <h3 className="form-page-container-subheader">New Note</h3>
-            <textarea
-              value={newNoteContent}
-              onChange={(e) => setNewNoteContent(e.target.value)}
+            <div className="form-group" style={{ marginBottom: '10px' }}>
+              <label htmlFor="newNoteTitle" style={{ display: 'block', marginBottom: '5px' }}>Title (Optional):</label>
+              <input
+                type="text"
+                id="newNoteTitle"
+                placeholder="Enter note title"
+                value={newNoteTitle}
+                onChange={(e) => setNewNoteTitle(e.target.value)}
+                // Will inherit global input styling via App.css
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="newNoteContent" style={{ display: 'block', marginBottom: '5px' }}>Content:</label>
+              <textarea
+                id="newNoteContent" // Added id for label
+                value={newNoteContent}
+                onChange={(e) => setNewNoteContent(e.target.value)}
               rows={5}
               placeholder="Enter your campaign note here..."
             />

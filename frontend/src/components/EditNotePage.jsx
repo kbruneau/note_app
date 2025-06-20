@@ -12,8 +12,8 @@ const EditNotePage = () => {
     const fetchNote = async () => {
       try {
         const response = await apiClient.get(`/notes/${id}`); // Use apiClient, relative URL
-        setTitle(response.data.title);
-        setContent(response.data.content);
+        setTitle(response.data.title !== undefined ? response.data.title : ''); // Ensure graceful fallback for title
+        setContent(response.data.content || ''); // Ensure graceful fallback for content
       } catch (error) {
         console.error('Error fetching note:', error);
         // Handle error (e.g., show a message or redirect)

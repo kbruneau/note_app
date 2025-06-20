@@ -43,10 +43,10 @@ module.exports = (pool) => {
       }
       const nodeId = nodeRows[0].id;
 
-      // Step 2: Get all relevant notes
+      // Step 2: Get all relevant notes using Full-Text Search
       const { rows: notes } = await client.query(
-        `SELECT id, content FROM "Note"."notes" WHERE content ILIKE '%' || $1 || '%'`,
-        [name]
+        `SELECT id, content FROM "Note"."notes" WHERE content_tsv @@ websearch_to_tsquery('english', $1)`,
+        [name] // 'name' is the search term for FTS
       );
       if (notes.length === 0) {
         await client.query('COMMIT'); // No notes to process, commit (or rollback, depending on desired behavior)
