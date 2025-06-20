@@ -55,16 +55,8 @@ module.exports = (pool) => {
         message: taggerError.message,
         tagger_error_details: taggerError.response ? taggerError.response.data : "No response data"
         });
-      }
-
-    } catch (dbError) {
-      console.error('🔥 Database error in add-note:', dbError);
-      // This catch block handles errors from the initial note insertion.
-      if (!res.headersSent) {
-        // Ensure a response is only sent if one hasn't been already (e.g., by tagger error handling)
         res.status(500).json({ error: 'Failed to save note', message: dbError.message });
       }
-    }
     // client for tagger service call is managed by axios
   });
 

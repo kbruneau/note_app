@@ -395,7 +395,7 @@ const HomePage = () => {
       )}
 
       {currentTypeName === 'Notes' && showNewNoteForm && (
-        <div className="popup-box" style={{ bottom: '20px', right: '20px', width: 'auto', minWidth: '350px', maxWidth: '600px' }}> {/* Adjusted size */}
+        <div className="popup-box" style={{ bottom: '20px', right: '20px', width: 'auto', minWidth: '350px', maxWidth: '600px' }}>
           <div style={{ margin: '0 auto' }}>
             <h3 className="form-page-container-subheader">New Note</h3>
             <div className="form-group" style={{ marginBottom: '10px' }}>
@@ -406,23 +406,23 @@ const HomePage = () => {
                 placeholder="Enter note title"
                 value={newNoteTitle}
                 onChange={(e) => setNewNoteTitle(e.target.value)}
-                // Will inherit global input styling via App.css
               />
             </div>
             <div className="form-group">
               <label htmlFor="newNoteContent" style={{ display: 'block', marginBottom: '5px' }}>Content:</label>
               <textarea
-                id="newNoteContent" // Added id for label
+                id="newNoteContent"
                 value={newNoteContent}
                 onChange={(e) => setNewNoteContent(e.target.value)}
-              rows={5}
-              placeholder="Enter your campaign note here..."
-            />
-            <div className="button-row">
-              <button onClick={submitNewNote} disabled={submitting || !newNoteContent.trim()} className="button">
-                {submitting ? 'Saving...' : 'Save Note'}
-              </button>
-              <button onClick={() => setShowNewNoteForm(false)} className="button button-secondary">Cancel</button>
+                rows={5}
+                placeholder="Enter your campaign note here..."
+              />
+              <div className="button-row">
+                <button onClick={submitNewNote} disabled={submitting || !newNoteContent.trim()} className="button">
+                  {submitting ? 'Saving...' : 'Save Note'}
+                </button>
+                <button onClick={() => setShowNewNoteForm(false)} className="button button-secondary">Cancel</button>
+              </div>
             </div>
           </div>
         </div>
