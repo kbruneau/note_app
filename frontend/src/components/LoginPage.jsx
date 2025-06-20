@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom'; // Import Link
 import apiClient from '../services/apiClient';
 import './FormPages.css'; // Assuming a shared CSS file for form styling
 
@@ -68,6 +68,9 @@ function LoginPage() {
           <button type="submit">Login</button>
         </div>
       </form>
+      <p style={{ textAlign: 'center', marginTop: '1rem' }}>
+        Don't have an account? <Link to="/register">Sign Up</Link>
+      </p>
     </div>
   );
 }
