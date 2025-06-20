@@ -398,7 +398,6 @@ ALTER TABLE "Note"."tagging_corrections" ADD CONSTRAINT fk_tagging_corrections_m
 ALTER TABLE "Note"."node_links" DROP CONSTRAINT IF EXISTS node_links_src_tgt_rel_type_key;
 ALTER TABLE "Note"."node_links" ADD CONSTRAINT node_links_src_tgt_rel_type_key
     UNIQUE (source_node_id, target_node_id, relationship_type);
-RAISE NOTICE 'Applied unique constraint node_links_src_tgt_rel_type_key to Note.node_links.';
 
 -- Constraints for "core" schema
 ALTER TABLE "core"."names" DROP CONSTRAINT IF EXISTS fk_names_name_table;
