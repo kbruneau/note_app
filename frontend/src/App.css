@@ -819,3 +819,21 @@ select {
     padding: 1.5em;
   }
 }
+
+/* Logout Button Styling */
+.logout-button {
+  background-color: var(--accent-color-secondary); /* Or a different color like a red */
+  color: white;
+  padding: 0.5em 1em;
+  border: 1px solid var(--accent-color-primary);
+  border-radius: 6px;
+  cursor: pointer;
+  font-family: var(--font-family-headings);
+  font-size: 0.9rem;
+  margin-left: 1rem; /* Space it from other navbar items */
+  transition: background-color 0.2s ease;
+}
+
+.logout-button:hover {
+  background-color: var(--accent-color-primary); /* Darker on hover */
+}

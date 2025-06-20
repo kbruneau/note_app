@@ -14,14 +14,30 @@ CREATE SCHEMA IF NOT EXISTS "class";
 
 -- Schema: Note
 
+CREATE TABLE IF NOT EXISTS "Note"."users" (
+    id SERIAL PRIMARY KEY,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE "Note"."users" IS 'Stores user account information.';
+COMMENT ON COLUMN "Note"."users"."id" IS 'Unique identifier for the user.';
+COMMENT ON COLUMN "Note"."users"."username" IS 'Unique username for the user.';
+COMMENT ON COLUMN "Note"."users"."password_hash" IS 'Hashed password for the user.';
+COMMENT ON COLUMN "Note"."users"."created_at" IS 'Timestamp of when the user account was created.';
+
+
 CREATE TABLE IF NOT EXISTS "Note"."notes" (
     id SERIAL PRIMARY KEY,
+    user_id INTEGER,
     content TEXT,
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
     title TEXT,
     content_tsv TSVECTOR
 );
+COMMENT ON COLUMN "Note"."notes"."user_id" IS 'Identifier of the user who owns the note.';
 COMMENT ON COLUMN "Note"."notes"."content" IS 'The main textual content of the note.';
 COMMENT ON COLUMN "Note"."notes"."created_at" IS 'Timestamp of when the note was created.';
 COMMENT ON COLUMN "Note"."notes"."updated_at" IS 'Timestamp of when the note was last updated.';
@@ -299,6 +315,10 @@ FOR EACH ROW EXECUTE FUNCTION tsvector_update_trigger_function();
 -- ========================================================================== --
 
 -- Constraints for "Note" schema
+ALTER TABLE "Note"."notes" DROP CONSTRAINT IF EXISTS fk_notes_user;
+ALTER TABLE "Note"."notes" ADD CONSTRAINT fk_notes_user
+    FOREIGN KEY (user_id) REFERENCES "Note"."users"(id) ON DELETE CASCADE;
+
 ALTER TABLE "Note"."note_mentions" DROP CONSTRAINT IF EXISTS fk_note_mentions_note;
 ALTER TABLE "Note"."note_mentions" ADD CONSTRAINT fk_note_mentions_note
     FOREIGN KEY (note_id) REFERENCES "Note"."notes"(id) ON DELETE CASCADE;

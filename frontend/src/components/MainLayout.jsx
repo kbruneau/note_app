@@ -130,6 +130,7 @@ const MainLayout = () => {
             </button>
           ))}
         </nav>
+        <button onClick={handleLogout} className="logout-button">Logout</button>
       </div>
 
       <div className="app-content-area"> {/* Second child of app-container, flex-direction: row */}
