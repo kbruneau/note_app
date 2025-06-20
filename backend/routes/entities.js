@@ -9,7 +9,7 @@ module.exports = (pool) => {
     try {
       const { rows } = await pool.query(`
         SELECT id, name, type, sub_type, source, created_at, array_to_json(tags) AS tags
-        FROM "DM"."nodes"
+        FROM "Note"."nodes"
         WHERE type = $1
         ORDER BY name
       `, [type]);
@@ -33,7 +33,7 @@ module.exports = (pool) => {
 
       // Step 1: Retrieve node ID
       const { rows: nodeRows } = await client.query(
-        `SELECT id FROM "DM"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2 LIMIT 1 FOR UPDATE`, // Added FOR UPDATE
+        `SELECT id FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2 LIMIT 1 FOR UPDATE`, // Added FOR UPDATE
         [name, type]
       );
       if (nodeRows.length === 0) {
@@ -43,10 +43,10 @@ module.exports = (pool) => {
       }
       const nodeId = nodeRows[0].id;
 
-      // Step 2: Get all relevant notes
+      // Step 2: Get all relevant notes using Full-Text Search
       const { rows: notes } = await client.query(
-        `SELECT id, content FROM "DM"."notes" WHERE content ILIKE '%' || $1 || '%'`,
-        [name]
+        `SELECT id, content FROM "Note"."notes" WHERE content_tsv @@ websearch_to_tsquery('english', $1)`,
+        [name] // 'name' is the search term for FTS
       );
       if (notes.length === 0) {
         await client.query('COMMIT'); // No notes to process, commit (or rollback, depending on desired behavior)
@@ -78,7 +78,7 @@ module.exports = (pool) => {
 
       // Step 4: Get existing mentions for this node
       const { rows: existing } = await client.query(
-        `SELECT note_id, start_pos, end_pos FROM "DM"."note_mentions" WHERE node_id = $1 FOR UPDATE`, // Added FOR UPDATE
+        `SELECT note_id, start_pos, end_pos FROM "Note"."note_mentions" WHERE node_id = $1 FOR UPDATE`, // Added FOR UPDATE
         [nodeId]
       );
       const existingSet = new Set(existing.map(e => `${e.note_id}:${e.start_pos}:${e.end_pos}`));
@@ -103,7 +103,7 @@ module.exports = (pool) => {
       });
 
       await client.query(
-        `INSERT INTO "DM"."note_mentions" (node_id, note_id, start_pos, end_pos, mention_type)
+        `INSERT INTO "Note"."note_mentions" (node_id, note_id, start_pos, end_pos, mention_type)
          VALUES ${insertValues}`,
         insertParams
       );

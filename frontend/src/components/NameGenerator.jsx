@@ -24,7 +24,7 @@ const NameGenerator = () => {
   };
 
   return (
-    <div>
+    <div className="form-page-container"> {/* Applied class */}
       <h2>D&D Name Generator</h2>
 
       <label>Race:</label>
@@ -51,9 +51,9 @@ const NameGenerator = () => {
       </button>
 
       {generatedName && (
-        <div>
+        <div className="generated-name-display"> {/* Applied class */}
           <h3>🎲 You rolled {generatedName.roll}:</h3>
-          <strong>{generatedName.name}</strong> ({generatedName.race} {generatedName.option})
+          <strong>{generatedName.name}</strong> <span>({generatedName.race} {generatedName.option})</span>
         </div>
       )}
     </div>

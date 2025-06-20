@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import apiClient from '../services/apiClient'; // Import apiClient
 import '../App.css';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom'; // Added Link
 
 const NodePage = () => {
   const { nodeId } = useParams();
@@ -12,9 +12,58 @@ const NodePage = () => {
   const [expandedNotes, setExpandedNotes] = useState([]);
   const navigate = useNavigate();
 
+  // Helper function to format mention source and confidence
+  const formatMentionSource = (source, confidence) => {
+    if (!source) return `(Confidence: ${confidence?.toFixed(2) || 'N/A'})`;
+
+    let sourceDescription = source;
+
+    if (source === 'PHRASEMATCHER_EXACT') {
+      sourceDescription = 'Exact Match (DB)';
+    } else if (source === 'USER_CONFIRMED') {
+      sourceDescription = 'User Confirmed';
+    } else if (source === 'USER_ADDED') {
+      sourceDescription = 'User Added';
+    } else if (source === 'USER_MODIFIED') {
+      sourceDescription = 'User Modified';
+    } else if (source.startsWith('SPACY_NER_')) {
+      const nerType = source.replace('SPACY_NER_', '').replace('_PASSTHROUGH','');
+      if (nerType === 'PERSON' || nerType === 'LOCATION' || nerType === 'ORG') {
+        sourceDescription = `Detected ${nerType.charAt(0) + nerType.slice(1).toLowerCase()} (NLP)`;
+      } else if (nerType.startsWith('LOCATION_')) { // Handles LOCATION_GPE, LOCATION_LOC etc.
+        sourceDescription = `Detected Location (NLP)`;
+      } else if (nerType.startsWith('RAW_')) {
+        const rawNerType = nerType.replace('RAW_', '');
+        sourceDescription = `NLP Raw: ${rawNerType}`;
+      } else {
+         sourceDescription = `Detected (NLP)`;
+      }
+    } else if (source === 'INFERRED_RULE_KEYWORD_ITEM') {
+      sourceDescription = 'Inferred Item (Keyword)';
+    } else if (source === 'INFERRED_RULE_VERB_SPELL') {
+      sourceDescription = 'Inferred Spell (Context)';
+    } else if (source === 'INFERRED_RULE_VERB_ITEM') {
+      sourceDescription = 'Inferred Item (Context)';
+    } else if (source === 'INFERRED_RULE_DEP_PERSON') {
+      sourceDescription = 'Inferred Person (Context)';
+    } else if (source.startsWith('INFERRED_RULE_')) { // More generic rule-based
+        const ruleType = source.replace('INFERRED_RULE_', '');
+        sourceDescription = `Inferred as ${ruleType.charAt(0) + ruleType.slice(1).toLowerCase()} (Rule)`;
+    } else if (source.startsWith('INFERRED_')) {
+      const inferredDetail = source.replace('INFERRED_', '').replace(/_/g, ' ');
+      sourceDescription = `Inferred (${inferredDetail.charAt(0) + inferredDetail.slice(1).toLowerCase()})`;
+    } else if (source === 'UNKNOWN') {
+      sourceDescription = 'System Suggestion (Low Confidence)';
+    }
+
+    const confidenceText = confidence !== null && confidence !== undefined ? `Conf: ${confidence.toFixed(2)}` : 'Conf: N/A';
+    return `${sourceDescription} (${confidenceText})`;
+  };
+
   // State for correction modal
   const [editingMention, setEditingMention] = useState(null);
   const [newMentionType, setNewMentionType] = useState('');
+  const [editedMentionName, setEditedMentionName] = useState(''); // New state for edited name
   const mentionTypes = ['PERSON', 'LOCATION', 'ITEM', 'SPELL', 'MONSTER', 'OTHER']; // Available types
 
   useEffect(() => {
@@ -51,11 +100,24 @@ const NodePage = () => {
 
   const handleTypeChange = async () => {
     try {
-      await apiClient.patch(`/nodes/${nodeId}/type`, { newType }); // Use apiClient, relative URL
-      setNode(prev => ({ ...prev, type: newType }));
-      setIsEditingType(false);
+      const response = await apiClient.patch(`/nodes/${nodeId}/type`, { newType });
+      setIsEditingType(false); // Close editing UI first
+
+      if (response.data.merged === true) {
+        alert(response.data.message || `Node type changed and merged into Node ID: ${response.data.target_node_id}. You will be redirected.`);
+        navigate(`/node/${response.data.target_node_id}`);
+        // The useEffect for [nodeId] will re-fetch data for the new target_node_id page
+      } else {
+        // Simple update, NodeId remains the same
+        setNode(prev => ({ ...prev, type: newType })); // Update local state
+        alert(response.data.message || 'Node type updated successfully!');
+      }
     } catch (err) {
       console.error('Failed to update node type:', err);
+      alert('Failed to update node type: ' + (err.response?.data?.error || err.message));
+      // Optionally, if the error was 404 because the current node was deleted (e.g. by another user)
+      // you might want to navigate away or show a specific message.
+      // For now, just log and alert.
     }
   };
 
@@ -92,38 +154,69 @@ const NodePage = () => {
   const handleOpenEditModal = (mention) => {
     setEditingMention(mention);
     setNewMentionType(mention.mention_type);
+    setEditedMentionName(mention.snippet || ''); // Initialize with current snippet or empty string
   };
 
   const handleCloseModal = () => {
     setEditingMention(null);
     setNewMentionType('');
+    setEditedMentionName(''); // Reset edited name
   };
 
   const handleSaveCorrection = async () => {
-    if (!editingMention || !newMentionType) return;
+    if (!editingMention || !newMentionType || !editedMentionName.trim()) {
+        alert("Mention text and type cannot be empty.");
+        return;
+    }
 
     const payload = {
+      new_name_segment: editedMentionName.trim(), // Use the edited name
       new_type: newMentionType,
       note_id: editingMention.note_id,
-      original_text_segment: editingMention.snippet || editingMention.node_name, // Assuming snippet is preferred if available
+      original_text_segment: editingMention.snippet || editingMention.node_name,
       original_mention_type: editingMention.mention_type,
       original_source: editingMention.source,
       original_confidence: editingMention.confidence,
-      start_pos: editingMention.start_pos, // Assuming span doesn't change for type-only correction for now
+      // If new_name_segment is different, start_pos/end_pos might ideally be updated.
+      // For this iteration, we pass original start/end_pos. The backend might adjust them
+      // or a more sophisticated UI would allow span editing.
+      // For now, we'll assume the backend uses the new_name_segment to find/create the node,
+      // and the existing start/end_pos are primarily for logging or if the segment text is unchanged.
+      // The backend POST /mentions/:mentionId/correct is set to update start/end if provided,
+      // but here we are not providing new ones if only text/type changes.
+      // If text changes, start/end pos in the note *should* change. This is a complex part.
+      // For now, we'll send the original start/end_pos, implying the correction is about the *node* it points to,
+      // or the *type* of the existing span. If the text itself changes, the span *must* be re-evaluated.
+      // This subtask focuses on allowing text edit in modal, implying the node's name changes.
+      // The backend will handle node creation/lookup with 'new_name_segment'.
+      // The existing mention's span (start_pos, end_pos) in the note will remain, but will point to a new/different node.
+      start_pos: editingMention.start_pos,
       end_pos: editingMention.end_pos,
-      // new_name_segment could be added if we allow text editing in the modal
     };
 
     try {
       const response = await apiClient.post(`/mentions/${editingMention.id}/correct`, payload);
-      const updatedMentionFromServer = response.data.updated_mention;
+      const { updated_mention } = response.data; // Destructure for clarity
 
       setMentions(prevMentions =>
-        prevMentions.map(m =>
-          m.id === editingMention.id
-            ? { ...updatedMentionFromServer, snippet: m.snippet, note_content: m.note_content } // Preserve snippet & content if not returned
-            : m
-        )
+        prevMentions.map(m => {
+          if (m.id === editingMention.id) {
+            // Update with data from server, ensure local display text (snippet) reflects the change
+            return {
+              ...m, // Keep some original fields if not returned by backend e.g. note_content
+              node_id: updated_mention.node_id,
+              mention_type: updated_mention.mention_type,
+              source: updated_mention.source,
+              confidence: updated_mention.confidence,
+              snippet: editedMentionName.trim(), // Crucially, update the displayed snippet to the edited name
+              start_pos: updated_mention.start_pos, // Update if backend returns modified ones
+              end_pos: updated_mention.end_pos,
+               // If backend sends back the node name linked to node_id:
+              // node_name: updated_mention.node_name (or similar) could also be used for snippet.
+            };
+          }
+          return m;
+        })
       );
       handleCloseModal();
     } catch (error) {
@@ -146,6 +239,26 @@ const NodePage = () => {
     } catch (error) {
       console.error('Failed to delete mention:', error);
       alert('Failed to delete mention. ' + (error.response?.data?.error || error.message));
+    }
+  };
+
+  const handleQuickConfirm = async (mentionId) => {
+    try {
+      const response = await apiClient.post(`/mentions/${mentionId}/confirm`);
+      const confirmedMention = response.data.updated_mention; // Backend returns the updated mention
+
+      setMentions(prevMentions =>
+        prevMentions.map(m =>
+          m.id === mentionId
+            ? { ...m, ...confirmedMention, snippet: m.snippet, note_content: m.note_content } // Preserve client-side fields if not in confirmedMention
+            : m
+        )
+      );
+      // Optionally, show a success notification
+      // alert("Mention confirmed!");
+    } catch (error) {
+      console.error('Failed to quick confirm mention:', error);
+      alert('Failed to confirm mention: ' + (error.response?.data?.message || error.message));
     }
   };
 
@@ -180,9 +293,16 @@ const NodePage = () => {
                 <div className="entity-meta">
                   <span>
                     In Note <Link to={`/#note-${m.note_id}`}>#{m.note_id}</Link>:
-                    Type: {formatType(m.mention_type)} (Conf: {m.confidence?.toFixed(2)}, Src: {m.source})
+                    Type: {formatType(m.mention_type)} ({formatMentionSource(m.source, m.confidence)})
                   </span>
-                  <div style={{ float: 'right' }}>
+                  <div className="mention-actions">
+                    {!['USER_CONFIRMED', 'USER_ADDED', 'PHRASEMATCHER_EXACT', 'USER_MODIFIED'].includes(m.source) && (
+                      <button
+                        onClick={() => handleQuickConfirm(m.id)}
+                        className="button-icon button-quick-confirm"
+                        title="Quick Confirm Tag"
+                      > ✔️ </button>
+                    )}
                     <button
                       onClick={() => handleOpenEditModal(m)}
                       className="button-icon"
@@ -202,11 +322,14 @@ const NodePage = () => {
                     </button>
                   </div>
                 </div>
-                <div className="mention-snippet" style={{ clear: 'both', paddingTop: '5px' }}>
+                <div
+                  className={`mention-snippet ${expandedNotes.includes(m.note_id) ? 'expanded' : ''}`}
+                  style={{ clear: 'both', paddingTop: '5px' }}
+                >
                   <em>
-                    "{m.snippet || (expandedNotes.includes(m.note_id)
-                      ? m.note_content
-                      : m.note_content?.substring(Math.max(0, m.start_pos - 50), m.end_pos + 50))}"
+                    {expandedNotes.includes(m.note_id)
+                      ? m.note_content  // Show full content when expanded
+                      : m.snippet || 'Snippet not available.'} {/* Use backend-generated snippet when collapsed */}
                   </em>
                 </div>
               </li>
@@ -221,25 +344,35 @@ const NodePage = () => {
         <div className="modal-backdrop">
           <div className="modal-content">
             <h3>Correct Mention</h3>
-            <p><strong>Text:</strong> "{editingMention.snippet || editingMention.node_name}"</p>
-            <p><strong>Current Type:</strong> {formatType(editingMention.mention_type)}</p>
-            <p><em>(Source: {editingMention.source}, Confidence: {editingMention.confidence?.toFixed(2)})</em></p>
+            <div style={{ marginBottom: '10px' }}>
+              <label htmlFor="editedMentionName" style={{ display: 'block', marginBottom: '5px' }}>Mention Text: </label>
+              <input
+                type="text"
+                id="editedMentionName"
+                value={editedMentionName}
+                onChange={(e) => setEditedMentionName(e.target.value)}
+                style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+              />
+            </div>
 
-            <div>
-              <label htmlFor="newMentionType">New Type: </label>
+            <div style={{ marginBottom: '10px' }}>
+              <label htmlFor="newMentionType" style={{ display: 'block', marginBottom: '5px' }}>New Type: </label>
               <select
                 id="newMentionType"
                 value={newMentionType}
                 onChange={(e) => setNewMentionType(e.target.value)}
+                style={{ width: '100%', padding: '8px' }}
               >
                 {mentionTypes.map(type => (
                   <option key={type} value={type}>{formatType(type)}</option>
                 ))}
               </select>
             </div>
+            <p><em>Original Type: {formatType(editingMention.mention_type)} (Source: {editingMention.source}, Confidence: {editingMention.confidence?.toFixed(2)})</em></p>
+
 
             <div className="modal-actions">
-              <button onClick={handleSaveCorrection} className="button">Save Change</button>
+              <button onClick={handleSaveCorrection} className="button" disabled={!editedMentionName.trim()}>Save Change</button>
               <button onClick={handleDeleteMentionInModal} className="button button-danger">Delete Mention</button>
               <button onClick={handleCloseModal} className="button button-secondary">Cancel</button>
             </div>

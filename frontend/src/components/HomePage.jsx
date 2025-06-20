@@ -1,51 +1,42 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import apiClient from '../services/apiClient'; // Import apiClient
+import apiClient from '../services/apiClient';
 import '../App.css';
-import { useLocation } from 'react-router-dom';
+import { useLocation, useParams } from 'react-router-dom';
 
-const tabOptions = ['Notes', 'People', 'Places', 'Items', 'Spells'];
+const entityTypesForTagging = ['PERSON', 'LOCATION', 'ITEM', 'SPELL', 'MONSTER', 'OTHER'];
 
 const HomePage = () => {
-  const [activeTab, setActiveTab] = useState('Notes');
+  const { entityType } = useParams();
+  const location = useLocation();
+
+  const currentTypeName = useMemo(() => {
+    if (!entityType) return 'Notes';
+    const name = entityType.charAt(0).toUpperCase() + entityType.slice(1);
+    return name;
+  }, [entityType]);
+
   const [data, setData] = useState([]);
   const [sortByRecent, setSortByRecent] = useState(true);
   const [editNoteId, setEditNoteId] = useState(null);
   const [editContent, setEditContent] = useState('');
   const [newNoteContent, setNewNoteContent] = useState('');
+  const [newNoteTitle, setNewNoteTitle] = useState(''); // Added state for new note title
   const [showNewNoteForm, setShowNewNoteForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+
   const [selection, setSelection] = useState({ text: '', start: null, end: null });
   const [selectedNoteId, setSelectedNoteId] = useState(null);
   const [showFabOptions, setShowFabOptions] = useState(false);
-  const [playerCharacters, setPlayerCharacters] = useState([]);
-  const [partyMembers, setPartyMembers] = useState([]);
   const [existingNode, setExistingNode] = useState(null);
+  const [newTypeForExistingText, setNewTypeForExistingText] = useState(''); // New state
 
-  const fetchCharacters = async () => {
-    // parseTags function removed
-  
-    try {
-      const res = await apiClient.get('/entities/by-type/PERSON'); // Use apiClient
-  
-      // Updated logic to use p.tags directly, assuming it's a JSON array
-      const pcs = res.data.filter(p => p.tags && p.tags.includes('Player Character'));
-      const party = res.data.filter(p => p.tags && p.tags.includes('Party Member'));
-  
-      setPlayerCharacters(pcs);
-      setPartyMembers(party);
-    } catch (err) {
-      console.error('Failed to fetch PC/Party data', err);
-    }
-  };
-  const location = useLocation();
   const [highlightNoteId, setHighlightNoteId] = useState(null);
-  
+
   useEffect(() => {
     const hash = location.hash;
-    if (hash.startsWith('#note-')) {
+    if (currentTypeName === 'Notes' && hash.startsWith('#note-')) {
       const id = parseInt(hash.replace('#note-', ''), 10);
       setHighlightNoteId(id);
-      setActiveTab('Notes');
       setTimeout(() => {
         const el = document.getElementById(`note-${id}`);
         if (el) {
@@ -53,9 +44,11 @@ const HomePage = () => {
           el.classList.add('highlighted');
           setTimeout(() => el.classList.remove('highlighted'), 3000);
         }
-      }, 300); // Delay to wait for render
+      }, 300);
+    } else {
+      setHighlightNoteId(null);
     }
-  }, [location, data]);
+  }, [location, data, currentTypeName]);
 
   useEffect(() => {
     const typeMap = {
@@ -65,41 +58,63 @@ const HomePage = () => {
       Items: 'ITEM',
       Spells: 'SPELL'
     };
+    const backendType = typeMap[currentTypeName] || currentTypeName.toUpperCase();
+
     const fetchData = async () => {
+      setSubmitting(true);
       try {
-        const endpoint = activeTab === 'Notes' ? '/notes' : `/entities/by-type/${typeMap[activeTab]}`; // Relative URLs
-        const res = await apiClient.get(endpoint); // Use apiClient
+        const endpoint = currentTypeName === 'Notes' ? '/notes' : `/entities/by-type/${backendType}`;
+        const res = await apiClient.get(endpoint);
         setData(res.data);
       } catch (err) {
-        console.error('Failed to fetch data', err);
+        console.error(`Failed to fetch ${currentTypeName}:`, err);
         setData([]);
+      } finally {
+        setSubmitting(false);
       }
     };
-
     fetchData();
-    // fetchCharacters(); // Removed from here
-  }, [activeTab]);
-
-  // New useEffect for initial character fetch
-  useEffect(() => {
-    fetchCharacters();
-  }, []); // Empty dependency array means this runs once on mount
+  }, [currentTypeName]);
 
   const handleTextSelect = async (noteId, content) => {
+    if (currentTypeName !== 'Notes') return;
     const selectionObj = window.getSelection();
+    if (!selectionObj || selectionObj.rangeCount === 0) return;
     const text = selectionObj.toString().trim();
     if (!text) return;
 
-    const start = content.indexOf(text);
-    const end = start + text.length;
-    if (start === -1) return;
+    const range = selectionObj.getRangeAt(0);
+    const preSelectionRange = range.cloneRange();
+
+    let noteContentContainer = range.startContainer.parentElement;
+    while(noteContentContainer && !noteContentContainer.classList.contains('note-content')) {
+        noteContentContainer = noteContentContainer.parentElement;
+    }
+    if (!noteContentContainer) {
+        noteContentContainer = document.getElementById(`note-${noteId}`)?.querySelector('.note-content');
+    }
+
+    let start, end;
+    if (!noteContentContainer) {
+        console.warn("Could not determine note content container for accurate offset calculation.");
+        const simpleStart = content.indexOf(text);
+        if (simpleStart === -1) return; // Text not found in content, should not happen
+        start = simpleStart;
+        end = start + text.length;
+    } else {
+        preSelectionRange.selectNodeContents(noteContentContainer);
+        preSelectionRange.setEnd(range.startContainer, range.startOffset);
+        start = preSelectionRange.toString().length;
+        end = start + text.length;
+    }
 
     setSelection({ text, start, end });
     setSelectedNoteId(noteId);
     setShowFabOptions(true);
+    setNewTypeForExistingText(''); // Reset dropdown
 
     try {
-      const res = await apiClient.get(`/nodes/by-name/${encodeURIComponent(text)}`); // Use apiClient
+      const res = await apiClient.get(`/nodes/by-name/${encodeURIComponent(text)}`);
       setExistingNode(res.data || null);
     } catch {
       setExistingNode(null);
@@ -107,9 +122,8 @@ const HomePage = () => {
   };
 
   const tagSelectionManually = async (type) => {
-    if (!selection.text || selectedNoteId == null) return;
+    if (!selection.text || selectedNoteId == null || currentTypeName !== 'Notes') return;
     try {
-      // Updated to use the new endpoint and payload structure
       await apiClient.post(`/notes/${selectedNoteId}/mentions/add`, {
         name_segment: selection.text,
         type: type,
@@ -119,46 +133,43 @@ const HomePage = () => {
       setSelection({ text: '', start: null, end: null });
       setSelectedNoteId(null);
       setShowFabOptions(false);
-
-      // Keep the /retag-entity-everywhere call for now
-      await apiClient.post('/retag-entity-everywhere', {
-        name: selection.text,
-        type: type
-      });
-      await fetchCharacters(); // Refresh character list in sidebar
+      await apiClient.post('/retag-entity-everywhere', { name: selection.text, type: type });
     } catch (err) {
       console.error('Failed to manually tag:', err);
       alert('Error tagging word. Check console. ' + (err.response?.data?.error || err.message));
     }
   };
 
-  const tagWithPersonTag = async (tagLabel) => {
-    // This function now becomes a shortcut for tagSelectionManually('PERSON')
-    // The specific tagLabel (e.g. "Player Character") handling is removed for now,
-    // as the new `/notes/:noteId/mentions/add` endpoint doesn't handle adding tags to DM.nodes.
-    // This would require a separate endpoint or modification of node update logic.
-    if (!selection.text || selectedNoteId == null) return;
+  const handleRetagExistingTextAsNewType = async () => {
+    if (!selection.text || selectedNoteId == null || !newTypeForExistingText || currentTypeName !== 'Notes') {
+      alert("Please select a new type for the re-tag action.");
+      return;
+    }
     try {
       await apiClient.post(`/notes/${selectedNoteId}/mentions/add`, {
         name_segment: selection.text,
-        type: 'PERSON',
+        type: newTypeForExistingText,
         start_pos: selection.start,
         end_pos: selection.end
       });
+
+      await apiClient.post('/retag-entity-everywhere', { name: selection.text, type: newTypeForExistingText });
+
       setSelection({ text: '', start: null, end: null });
       setSelectedNoteId(null);
       setShowFabOptions(false);
-
-      // Keep the /retag-entity-everywhere call for now
-      await apiClient.post('/retag-entity-everywhere', {
-        name: selection.text,
-        type: 'PERSON'
-      });
-      await fetchCharacters(); // Refresh character list in sidebar
+      setNewTypeForExistingText('');
     } catch (err) {
-      console.error('Failed to tag with person tag:', err);
-      alert('Error tagging as Person. Check console. ' + (err.response?.data?.error || err.message));
+      console.error('Failed to re-tag existing text:', err);
+      alert('Error re-tagging. Check console. ' + (err.response?.data?.error || err.message));
     }
+  };
+
+  const tagWithPersonTag = async (tagLabel) => {
+    // This is now effectively the same as tagSelectionManually('PERSON')
+    // The specific tagLabel (e.g. "Player Character") is not directly used to add a tag to DM.nodes here.
+    // That would require a separate mechanism or endpoint.
+    await tagSelectionManually('PERSON');
   };
 
   const startEdit = (note) => {
@@ -167,238 +178,256 @@ const HomePage = () => {
   };
 
   const saveEdit = async (id) => {
+    setSubmitting(true);
     try {
-      await apiClient.put(`/notes/${id}`, { content: editContent }); // Use apiClient
-      // Update local state instead of re-fetching all notes
+      await apiClient.put(`/notes/${id}`, { content: editContent });
       setData(currentData =>
         currentData.map(note =>
-          note.id === id ? { ...note, content: editContent } : note
+          note.id === id ? { ...note, content: editContent, updated_at: new Date().toISOString() } : note
         )
       );
       setEditNoteId(null);
       setEditContent('');
     } catch (err) {
       console.error('Failed to update note:', err);
-      // Optionally, revert local state or show error to user
-    }
-  };
-
-  const deleteNote = async (id) => {
-    if (!window.confirm('Are you sure you want to delete this note?')) return;
-    try {
-      await apiClient.delete(`/notes/${id}`); // Use apiClient
-      setData(data.filter((n) => n.id !== id));
-    } catch (err) {
-      console.error('Failed to delete note:', err);
-    }
-  };
-
-  const submitNewNote = async () => {
-    if (!newNoteContent.trim()) return;
-    setSubmitting(true);
-    try {
-      const res = await apiClient.post('/add-note', { // Use apiClient
-        content: newNoteContent
-      });
-      // Add new note to local state using response data
-      const newNote = {
-        id: res.data.id,
-        content: newNoteContent, // Content is from local state before clearing
-        created_at: res.data.created_at,
-        // Assuming 'nodes' from response isn't directly stored in the 'data' array for notes view,
-        // but if it were, you'd add res.data.nodes here.
-        // For the 'Notes' tab, we primarily care about id, content, created_at.
-      };
-      setData(currentData => [newNote, ...currentData]); // Prepend new note
-
-      setNewNoteContent('');
-      setShowNewNoteForm(false);
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      // No need to re-fetch all notes
-    } catch (err) {
-      console.error('Failed to submit new note:', err);
-      // Optionally, inform user about the error
+      alert('Error updating note: ' + (err.response?.data?.error || err.message));
     } finally {
       setSubmitting(false);
     }
   };
 
-  const sortedNotes = useMemo(() => {
-    if (activeTab === 'Notes') {
-      // Ensure 'data' contains notes and they have 'created_at' and 'id'
-      const notesData = Array.isArray(data) ? data : [];
-      return [...notesData].sort((a, b) => {
-        // Basic check for properties to avoid runtime errors if data structure is unexpected
+  const deleteNote = async (id) => {
+    if (!window.confirm('Are you sure you want to delete this note?')) return;
+    setSubmitting(true);
+    try {
+      await apiClient.delete(`/notes/${id}`);
+      setData(data.filter((n) => n.id !== id));
+    } catch (err) {
+      console.error('Failed to delete note:', err);
+      alert('Error deleting note: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const submitNewNote = async () => {
+    if (!newNoteContent.trim()) return; // Keep check for content
+    setSubmitting(true);
+    try {
+      const payload = {
+        content: newNoteContent,
+        title: newNoteTitle.trim() // Include title in payload
+      };
+      const res = await apiClient.post('/add-note', payload);
+      // Backend response for /add-note now includes a 'note' object with id, title, content, created_at
+      // and a 'nodes' array for tagged entities.
+      const newNoteData = res.data.note;
+
+      const newNoteToAdd = {
+        id: newNoteData.id,
+        title: newNoteData.title, // Use title from backend response
+        content: newNoteData.content, // Use content from backend response
+        created_at: newNoteData.created_at,
+      };
+      setData(currentData => [newNoteToAdd, ...currentData]);
+      setNewNoteTitle(''); // Reset title state
+      setNewNoteContent('');
+      setShowNewNoteForm(false);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } catch (err) {
+      console.error('Failed to submit new note:', err);
+      alert('Error submitting new note: ' + (err.response?.data?.error || err.message));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const sortedData = useMemo(() => {
+    const currentData = Array.isArray(data) ? data : [];
+    if (currentTypeName === 'Notes') {
+      return [...currentData].sort((a, b) => {
         const dateA = a && a.created_at ? new Date(a.created_at) : 0;
         const dateB = b && b.created_at ? new Date(b.created_at) : 0;
         const idA = a && a.id ? a.id : 0;
         const idB = b && b.id ? b.id : 0;
-
         return sortByRecent ? dateB - dateA : idA - idB;
       });
     }
-    return []; // Return empty array if not 'Notes' tab or data is not notes-like
-                 // Or return 'data' directly if other tabs also use 'data' and don't need this sorting
-  }, [data, sortByRecent, activeTab]);
-
+    if (currentData.length > 0 && currentData[0].hasOwnProperty('name')) {
+        return [...currentData].sort((a,b) => (a.name || "").localeCompare(b.name || ""));
+    }
+    return currentData;
+  }, [data, sortByRecent, currentTypeName]);
 
   return (
-    <div className="app-wrapper">
-      <h2 className="entity-header">D&D Campaign Notes</h2>
-      <div className="navbar">
-        {tabOptions.map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={tab === activeTab ? 'active' : ''}
-          >
-            {tab}
+    <>
+      {currentTypeName === 'Notes' && (
+        <div className="sort-bar">
+          <button className="button" onClick={() => setSortByRecent(!sortByRecent)}>
+            Sort by {sortByRecent ? 'Most Recent' : 'Note Number (ID)'}
           </button>
-        ))}
-      </div>
+        </div>
+      )}
 
-      {activeTab === 'Notes' ? (
-        <>
-          <div className="sort-bar">
-            <button className="button" onClick={() => setSortByRecent(!sortByRecent)}>
-              Sort by {sortByRecent ? 'Note Number' : 'Most Recent'}
-            </button>
-          </div>
-          <ul className="note-list">
-            {/* Use sortedNotes here */}
-            {sortedNotes.map((n) => (
-                  <li
-                    key={n.id}
-                    id={`note-${n.id}`}
-                    className={`note-card ${highlightNoteId === n.id ? 'highlighted' : ''}`}
-                  >
-                  <div className="entity-meta">
-                  <a
+      {submitting && data.length === 0 && <p>Loading {currentTypeName}...</p>}
+
+      {currentTypeName === 'Notes' ? (
+        <ul className="note-list">
+          {sortedData.map((n) => (
+            <li
+              key={n.id}
+              id={`note-${n.id}`}
+              className={`note-card ${highlightNoteId === n.id ? 'highlighted' : ''}`}
+            >
+              <div className="entity-meta">
+                <a
                   href={`/#note-${n.id}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setHighlightNoteId(n.id);
+                    if (window.location.hash !== `#note-${n.id}`) {
+                        window.location.hash = `note-${n.id}`;
+                    } else {
+                        const el = document.getElementById(`note-${n.id}`);
+                        el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }}
                   className="entity-link"
-                  style={{ textDecoration: 'none' }}
                 >
-                  <strong>Note #{n.id}</strong>
+                  <strong>{n.title || `Note #${n.id}`}</strong>
                 </a>
-                    <em>({new Date(n.created_at).toLocaleString()})</em>
+                <em className="note-timestamp">
+                  ({new Date(n.created_at).toLocaleString()})
+                </em>
+              </div>
+              {editNoteId === n.id ? (
+                <>
+                  <textarea
+                    value={editContent}
+                    onChange={(e) => setEditContent(e.target.value)}
+                    rows={5}
+                  />
+                  <div className="button-row">
+                    <button className="button" onClick={() => saveEdit(n.id)} disabled={submitting}>Save</button>
+                    <button className="button button-secondary" onClick={() => setEditNoteId(null)}>Cancel</button>
                   </div>
-                  {editNoteId === n.id ? (
-                    <>
-                      <textarea
-                        value={editContent}
-                        onChange={(e) => setEditContent(e.target.value)}
-                        rows={3}
-                      />
-                      <div className="button-row">
-                        <button className="button" onClick={() => saveEdit(n.id)}>Save</button>
-                        <button className="button" onClick={() => setEditNoteId(null)}>Cancel</button>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="mention-entry">
-                      <div
-                        className="note-content"
-                        onMouseUp={() => handleTextSelect(n.id, n.content)}
-                      >
-                        {n.content}
-                      </div>
-                      <div className="button-row">
-                        <button className="button" onClick={() => startEdit(n)}>Edit</button>
-                        <button className="button" onClick={() => deleteNote(n.id)}>Delete</button>
-                      </div>
-                    </div>
-                  )}
-                </li>
-              ))}
-          </ul>
-        </>
+                </>
+              ) : (
+                <>
+                  <div
+                    className="note-content"
+                    onMouseUp={() => handleTextSelect(n.id, n.content)}
+                  >
+                    {n.content}
+                  </div>
+                  <div className="button-row">
+                    <button className="button button-delete-note" onClick={() => deleteNote(n.id)} disabled={submitting}>Delete</button>
+                    <button className="button button-edit-note" onClick={() => startEdit(n)}>Edit</button>
+                  </div>
+                </>
+              )}
+            </li>
+          ))}
+        </ul>
       ) : (
         <ul className="entity-list">
-          {/* For other tabs, 'data' is used directly.
-              If 'sortedNotes' returned 'data' for non-Notes tabs, it could be used here too.
-              However, the current useMemo returns [] for non-Notes tabs, so 'data' is correct. */}
-          {data.map((n) => (
-            <li key={n.id}>
-              <a href={`/node/${n.id}`} className="entity-link">{n.name}</a>
+          {sortedData.map((item) => (
+            <li key={item.id}>
+              <a href={`/node/${item.id}`} className="entity-link">{item.name}</a>
             </li>
           ))}
         </ul>
       )}
 
-      {!showNewNoteForm && !showFabOptions && (
-        <button onClick={() => setShowNewNoteForm(true)} className="fab">
+      {currentTypeName === 'Notes' && !showNewNoteForm && !showFabOptions && (
+        <button onClick={() => setShowNewNoteForm(true)} className="fab" title="Add New Note">
           +
         </button>
       )}
 
-      {showFabOptions && (
+      {currentTypeName === 'Notes' && showFabOptions && (
         <div className="popup-box">
-          <p style={{ marginBottom: '0.5rem' }}>Tag "{selection.text}" as:</p>
+          <p style={{ marginBottom: '0.5rem' }}>Tag "<em>{selection.text}</em>" as:</p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {existingNode?.type === 'PERSON' ? (
+            {existingNode ? (
               <>
-                <p><em>{selection.text}</em> is already tagged as a Person.</p>
-                <button onClick={() => tagWithPersonTag('Player Character')}>Add Player Character Tag</button>
-                <button onClick={() => tagWithPersonTag('Party Member')}>Add Party Member Tag</button>
+                <p>This text is already known as: <strong>{existingNode.name}</strong> (Type: {existingNode.type}, Node ID: {existingNode.id}).</p>
+                {existingNode.type === 'PERSON' && (
+                  <>
+                    <button onClick={() => tagWithPersonTag('Player Character')}>👤 Tag this occurrence as Person & (future: add PC tag)</button>
+                    <button onClick={() => tagWithPersonTag('Party Member')}>👤 Tag this occurrence as Person & (future: add Party tag)</button>
+                  </>
+                )}
+                <div className="retag-section">
+                  <p>Or, re-tag this specific instance of "<em>{selection.text}</em>" as:</p>
+                  <select
+                    value={newTypeForExistingText}
+                    onChange={(e) => setNewTypeForExistingText(e.target.value)}
+                  >
+                    <option value="">-- Select New Type --</option>
+                    {entityTypesForTagging.map(type => (
+                      <option key={type} value={type}>{type.charAt(0) + type.slice(1).toLowerCase()}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={handleRetagExistingTextAsNewType}
+                    disabled={!newTypeForExistingText || newTypeForExistingText === existingNode.type}
+                    className="button"
+                    title={newTypeForExistingText === existingNode.type ? "Select a different type to re-tag this specific mention." : ""}
+                  >
+                    Save as New Type for This Mention Only
+                  </button>
+                </div>
               </>
-            ) : existingNode ? (
-              <p><em>{selection.text}</em> is already tagged as {existingNode.type}.</p>
             ) : (
               <>
-                <button onClick={() => tagSelectionManually('PERSON')}>Tag as Person</button>
-                <button onClick={() => tagSelectionManually('LOCATION')}>Tag as Location</button>
-                <button onClick={() => tagSelectionManually('ITEM')}>Tag as Item</button>
-                <button onClick={() => tagSelectionManually('SPELL')}>Tag as Spell</button>
-                <button onClick={() => tagSelectionManually('MONSTER')}>Tag as Monster</button>
+                <p>Tag "<em>{selection.text}</em>" for the first time as:</p>
+                <button onClick={() => tagSelectionManually('PERSON')}>👤 Tag as Person</button>
+                <button onClick={() => tagSelectionManually('LOCATION')}>🏠 Tag as Location</button>
+                <button onClick={() => tagSelectionManually('ITEM')}>📜 Tag as Item</button>
+                <button onClick={() => tagSelectionManually('SPELL')}>🪄 Tag as Spell</button>
+                <button onClick={() => tagSelectionManually('MONSTER')}>💀 Tag as Monster</button>
               </>
             )}
-            <button onClick={() => setShowFabOptions(false)}>Cancel</button>
+            <button onClick={() => setShowFabOptions(false)} className="button button-secondary" style={{marginTop: '1rem'}}>Cancel All</button>
           </div>
         </div>
       )}
 
-      {showNewNoteForm && (
-        <div className="popup-box" style={{ bottom: 0, left: 0, right: 0, width: '100%' }}>
-          <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-            <h4 className="entity-header">New Note</h4>
-            <textarea
-              value={newNoteContent}
-              onChange={(e) => setNewNoteContent(e.target.value)}
-              rows={3}
-              placeholder="Enter your note here..."
-            />
-            <div style={{ display: 'flex', gap: '1rem' }}>
-              <button onClick={submitNewNote} disabled={submitting || !newNoteContent.trim()}>
-                {submitting ? 'Saving...' : 'Save Note'}
-              </button>
-              <button onClick={() => setShowNewNoteForm(false)}>Cancel</button>
+      {currentTypeName === 'Notes' && showNewNoteForm && (
+        <div className="popup-box" style={{ bottom: '20px', right: '20px', width: 'auto', minWidth: '350px', maxWidth: '600px' }}>
+          <div style={{ margin: '0 auto' }}>
+            <h3 className="form-page-container-subheader">New Note</h3>
+            <div className="form-group" style={{ marginBottom: '10px' }}>
+              <label htmlFor="newNoteTitle" style={{ display: 'block', marginBottom: '5px' }}>Title (Optional):</label>
+              <input
+                type="text"
+                id="newNoteTitle"
+                placeholder="Enter note title"
+                value={newNoteTitle}
+                onChange={(e) => setNewNoteTitle(e.target.value)}
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="newNoteContent" style={{ display: 'block', marginBottom: '5px' }}>Content:</label>
+              <textarea
+                id="newNoteContent"
+                value={newNoteContent}
+                onChange={(e) => setNewNoteContent(e.target.value)}
+                rows={5}
+                placeholder="Enter your campaign note here..."
+              />
+              <div className="button-row">
+                <button onClick={submitNewNote} disabled={submitting || !newNoteContent.trim()} className="button">
+                  {submitting ? 'Saving...' : 'Save Note'}
+                </button>
+                <button onClick={() => setShowNewNoteForm(false)} className="button button-secondary">Cancel</button>
+              </div>
             </div>
           </div>
         </div>
       )}
-
-        <div className="pc-sidebar">
-          <h3>Player Character</h3>
-          {playerCharacters.map((pc) => (
-            <div key={pc.id} className="pc-tile">
-              <a href={`/node/${pc.id}`} className="entity-link">
-                <h4>{pc.name}</h4>
-              </a>
-              <small className="tag pc">PC</small>
-            </div>
-          ))}
-
-          <h3>Party Members</h3>
-          {partyMembers.map((member) => (
-            <div key={member.id} className="pc-tile">
-              <a href={`/node/${member.id}`} className="entity-link">
-                <h4>{member.name}</h4>
-              </a>
-              <small className="tag party">Party</small>
-            </div>
-          ))}
-        </div>
-    </div>
+    </>
   );
 };
 

@@ -8,71 +8,64 @@ module.exports = (pool) => {
 
   // Add a new note
   router.post('/add-note', async (req, res) => {
-    const { content } = req.body;
+    const { content, title } = req.body; // Add title to destructuring
     if (!content) return res.status(400).json({ error: 'Missing note content' });
 
-    // The route does not seem to use explicit transactions for the initial note insert
-    // in the provided code. If it did, client acquisition/release would be here.
-    // For this subtask, we'll assume pool.query is acceptable for the initial insert,
-    // or that a higher-level mechanism handles client management if this route were part of a larger transaction.
-
-    let noteId;
-    let createdAt;
+    // Using a client for explicit transaction for note insert
+    const client = await pool.connect();
+    let newNote;
 
     try {
-      // Step 1: Insert the note into the database
-      const noteInsertResult = await pool.query(
-        `INSERT INTO "DM"."notes" (content) VALUES ($1) RETURNING id, created_at`,
-        [content]
+      await client.query('BEGIN');
+      // Step 1: Insert the note into the database, including title
+      const noteInsertResult = await client.query(
+        `INSERT INTO "Note"."notes" (content, title) VALUES ($1, $2) RETURNING id, title, content, created_at`,
+        [content, title || null] // Use title or null if not provided
       );
-      noteId = noteInsertResult.rows[0].id;
-      createdAt = noteInsertResult.rows[0].created_at;
-
-      // Step 2: Call the tagger service
-      try {
-        const taggerPayload = { note_id: noteId, text: content };
-        const taggerServiceUrl = 'http://localhost:5001/tag'; // Tagger service URL
-        const taggerResponse = await axios.post(taggerServiceUrl, taggerPayload);
-        const taggedNodes = taggerResponse.data;
-
-        return res.json({
-          success: true,
-          id: noteId,
-          created_at: createdAt,
-          nodes: taggedNodes
-        });
-
-      } catch (taggerError) {
-        console.error('Error calling tagger service:', taggerError.message);
-        // Note exists, but tagging failed. Respond with note details and error.
-        // The client might want to inform the user that the note was saved but entities couldn't be auto-tagged.
-        return res.status(500).json({
-          error: 'Note saved, but tagging service failed.',
-          message: taggerError.message,
-          note_id: noteId,
-          created_at: createdAt,
-          tagger_error_details: taggerError.response ? taggerError.response.data : "No response data" // Include tagger's error if available
-        });
-      }
-
+      newNote = noteInsertResult.rows[0];
+      await client.query('COMMIT');
     } catch (dbError) {
-      console.error('🔥 Database error in add-note:', dbError);
-      // This catch block handles errors from the initial note insertion.
-      if (!res.headersSent) {
-        // Ensure a response is only sent if one hasn't been already (e.g., by tagger error handling)
+      await client.query('ROLLBACK');
+      console.error('🔥 Database error in add-note (initial insert):', dbError);
+      return res.status(500).json({ error: 'Failed to save note', message: dbError.message });
+    } finally {
+      client.release();
+    }
+
+    // Step 2: Call the tagger service (outside the initial DB transaction for note creation)
+    try {
+      // Use newNote.content and newNote.id for consistency, as title is now part of newNote
+      const taggerPayload = { note_id: newNote.id, text: newNote.content };
+      const taggerServiceUrl = 'http://localhost:5001/tag';
+      const taggerResponse = await axios.post(taggerServiceUrl, taggerPayload);
+      const taggedNodes = taggerResponse.data;
+
+      return res.status(201).json({ // Return 201 for successful creation
+        success: true,
+        note: newNote, // Return the full new note object
+        nodes: taggedNodes // Keep tagged nodes if frontend uses them
+      });
+
+    } catch (taggerError) {
+      console.error('Error calling tagger service:', taggerError.message);
+      return res.status(500).json({
+        success: true, // Note was created
+        note: newNote, // Return created note
+        error: 'Note saved, but tagging service failed.',
+        message: taggerError.message,
+        tagger_error_details: taggerError.response ? taggerError.response.data : "No response data"
+        });
         res.status(500).json({ error: 'Failed to save note', message: dbError.message });
       }
-    }
-    // No explicit client.release() here as pool.query handles it,
-    // or client lifecycle is managed by a yet-to-be-implemented outer transaction scope.
+    // client for tagger service call is managed by axios
   });
 
   // Get all notes
   router.get('/notes', async (req, res) => {
     try {
       const { rows } = await pool.query(`
-        SELECT id, content, created_at
-        FROM "DM"."notes"
+        SELECT id, title, content, created_at
+        FROM "Note"."notes"
         ORDER BY created_at DESC
       `);
       res.json(rows);
@@ -84,61 +77,98 @@ module.exports = (pool) => {
   // Update a note
   router.put('/notes/:id', async (req, res) => {
     const { id } = req.params;
-    const { content } = req.body;
-    const client = await pool.connect(); // Acquire client
+    const noteId = parseInt(id, 10);
+    const { content, title } = req.body; // Add title
+
+    if (isNaN(noteId)) {
+      return res.status(400).json({ error: 'Invalid note ID.' });
+    }
+
+    // Ensure at least one field is being updated
+    if (content === undefined && title === undefined) {
+      return res.status(400).json({ error: 'No fields provided for update. Send at least title or content.' });
+    }
+
+    const client = await pool.connect();
+    let updatedNoteContentForTagger = content; // Default to new content if provided
 
     try {
-      // Start transaction for database operations
       await client.query('BEGIN');
-      await client.query(`UPDATE "DM"."notes" SET content = $1 WHERE id = $2`, [content, id]);
-      await client.query(`DELETE FROM "DM"."note_mentions" WHERE note_id = $1`, [id]);
-      await client.query(`DELETE FROM "DM"."node_links" WHERE note_id = $1`, [id]);
-      await client.query('COMMIT'); // Commit database changes before calling tagger
 
-      // Now call the tagger service
+      // Dynamically build the SET clause
+      const setClauses = [];
+      const queryParams = [];
+      let paramIndex = 1;
+
+      if (title !== undefined) { // Allows setting title to null or empty string explicitly
+        setClauses.push(`title = $${paramIndex++}`);
+        queryParams.push(title);
+      }
+      if (content !== undefined) {
+        setClauses.push(`content = $${paramIndex++}`);
+        queryParams.push(content);
+      }
+
+      queryParams.push(noteId); // For WHERE id = $N
+
+      if (setClauses.length === 0) {
+         // Should be caught by the undefined check above, but as a safeguard
+        await client.query('ROLLBACK'); // No actual changes to make
+        client.release();
+        return res.status(400).json({ error: "No content or title provided for update." });
+      }
+
+      const updateQuery = `UPDATE "Note"."notes" SET ${setClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${paramIndex} RETURNING id, title, content, created_at, updated_at;`;
+
+      const updateResult = await client.query(updateQuery, queryParams);
+
+      if (updateResult.rowCount === 0) {
+        await client.query('ROLLBACK');
+        client.release();
+        return res.status(404).json({ error: 'Note not found or not updated.' });
+      }
+
+      const updatedNoteFromDB = updateResult.rows[0];
+      updatedNoteContentForTagger = updatedNoteFromDB.content; // Use the actual content from DB for tagger
+
+      // Clear existing mentions and links as content/context might have changed
+      await client.query(`DELETE FROM "Note"."note_mentions" WHERE note_id = $1`, [noteId]);
+      await client.query(`DELETE FROM "Note"."node_links" WHERE note_id = $1`, [noteId]);
+
+      await client.query('COMMIT');
+
+      // Call tagger service after successful DB update
       try {
-        const taggerPayload = { note_id: id, text: content };
+        const taggerPayload = { note_id: noteId, text: updatedNoteContentForTagger };
         const taggerServiceUrl = 'http://localhost:5001/tag';
-        // We don't necessarily need the response data from the tagger for the client here,
-        // but we wait for it to complete.
-        await axios.post(taggerServiceUrl, taggerPayload);
+        const taggerResponse = await axios.post(taggerServiceUrl, taggerPayload);
 
-        res.json({ success: true, message: "Note updated and retagged successfully." });
+        res.json({
+          success: true,
+          message: "Note updated and retagged successfully.",
+          note: updatedNoteFromDB, // Send back the fully updated note
+          nodes: taggerResponse.data // Send back new tags
+        });
 
       } catch (taggerError) {
-        console.error(`Error calling tagger service during note update for ID ${id}:`, taggerError.message);
-        // Note was updated in the DB, but re-tagging failed.
-        // It's important to still send a 2xx success for the DB update, but with an error message for tagging.
-        // However, the client might interpret a 500 as a complete failure of the PUT.
-        // A more nuanced approach could be a 207 Multi-Status, but for now, let's indicate primary success with a warning.
-        // Or, as per instructions, a 500 but with success:true for the DB part.
+        console.error(`Error calling tagger service during note update for ID ${noteId}:`, taggerError.message);
         res.status(500).json({
-          success: true, // Indicates DB update was fine
+          success: true, // DB update was successful
+          note: updatedNoteFromDB,
           error: 'Note updated, but re-tagging service failed.',
           message: taggerError.message,
-          note_id: id,
           tagger_error_details: taggerError.response ? taggerError.response.data : "No response data"
         });
       }
 
     } catch (dbError) {
-      // This catch block is for errors during the DB transaction (BEGIN, UPDATE, DELETEs, COMMIT)
-      if (client) {
-        try {
-          await client.query('ROLLBACK');
-        } catch (rollbackErr) {
-          console.error('🔥 Failed to rollback transaction:', rollbackErr);
-        }
-      }
-      console.error(`🔥 Database error updating note ID ${id}:`, dbError);
-      // Ensure a response is only sent if one hasn't been already (by tagger error handling, though less likely here)
+      await client.query('ROLLBACK');
+      console.error(`🔥 Database error updating note ID ${noteId}:`, dbError);
       if (!res.headersSent) {
         res.status(500).json({ success: false, error: 'Failed to update note', message: dbError.message });
       }
     } finally {
-      if (client) {
-        client.release(); // Release client in finally block
-      }
+      client.release();
     }
   });
 
@@ -148,9 +178,9 @@ module.exports = (pool) => {
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(`DELETE FROM "DM"."note_mentions" WHERE note_id = $1`, [id]);
-      await client.query(`DELETE FROM "DM"."node_links" WHERE note_id = $1`, [id]);
-      await client.query(`DELETE FROM "DM"."notes" WHERE id = $1`, [id]);
+      await client.query(`DELETE FROM "Note"."note_mentions" WHERE note_id = $1`, [id]);
+      await client.query(`DELETE FROM "Note"."node_links" WHERE note_id = $1`, [id]);
+      await client.query(`DELETE FROM "Note"."notes" WHERE id = $1`, [id]);
       await client.query('COMMIT');
       res.json({ success: true });
     } catch (err) {
@@ -170,7 +200,7 @@ module.exports = (pool) => {
       await client.query('BEGIN');
       // Check if the node already exists
       const existing = await client.query(`
-        SELECT id FROM "DM"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2
+        SELECT id FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2
       `, [name, type]);
   
       let nodeId; // Renamed to avoid conflict with the note_id from req.body
@@ -178,7 +208,7 @@ module.exports = (pool) => {
         nodeId = existing.rows[0].id;
       } else {
         const insert = await client.query(`
-          INSERT INTO "DM"."nodes" (name, type) VALUES ($1, $2) RETURNING id
+          INSERT INTO "Note"."nodes" (name, type) VALUES ($1, $2) RETURNING id
         `, [name, type]);
         nodeId = insert.rows[0].id;
       }
@@ -186,7 +216,7 @@ module.exports = (pool) => {
       // Append tag only if it's a PERSON and not already tagged
       if (tag && type === 'PERSON') {
         await client.query(`
-          UPDATE "DM"."nodes"
+          UPDATE "Note"."nodes"
           SET tags = array_append(tags, $1)
           WHERE id = $2 AND NOT ($1 = ANY(tags))
         `, [tag, nodeId]);
@@ -194,7 +224,7 @@ module.exports = (pool) => {
   
       // Create note mention
       await client.query(`
-        INSERT INTO "DM"."note_mentions" (node_id, note_id, start_pos, end_pos, mention_type)
+        INSERT INTO "Note"."note_mentions" (node_id, note_id, start_pos, end_pos, mention_type)
         VALUES ($1, $2, $3, $4, $5)
       `, [nodeId, note_id, start_pos, end_pos, type]); // Use note_id from req.body here
   
@@ -239,7 +269,7 @@ module.exports = (pool) => {
 
       // Step 1: Check if the target node (corrected name and type) exists or create it
       const existingNodeRes = await client.query(
-        `SELECT id FROM "DM"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2`,
+        `SELECT id FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2`,
         [name_to_use, new_type]
       );
 
@@ -247,13 +277,13 @@ module.exports = (pool) => {
         final_node_id = existingNodeRes.rows[0].id;
       } else {
         const newNodeRes = await client.query(
-          `INSERT INTO "DM"."nodes" (name, type) VALUES ($1, $2) RETURNING id`,
+          `INSERT INTO "Note"."nodes" (name, type) VALUES ($1, $2) RETURNING id`,
           [name_to_use, new_type]
         );
         final_node_id = newNodeRes.rows[0].id;
       }
 
-      // Step 2: Update the existing mention in DM.note_mentions
+      // Step 2: Update the existing mention in Note.note_mentions
       // Determine which fields to update in note_mentions
       const updateFields = [];
       const updateValues = [];
@@ -281,7 +311,7 @@ module.exports = (pool) => {
       updateValues.push(mentionId); // For the WHERE clause
 
       const updateMentionQuery = `
-        UPDATE "DM"."note_mentions"
+        UPDATE "Note"."note_mentions"
         SET ${updateFields.join(', ')}
         WHERE id = $${paramCount}
         RETURNING *;
@@ -295,7 +325,7 @@ module.exports = (pool) => {
 
       // Step 3: Log the correction
       await client.query(
-        `INSERT INTO "DM"."tagging_corrections" (
+        `INSERT INTO "Note"."tagging_corrections" (
           note_id, mention_id, original_text_segment, original_mention_type,
           original_source, original_confidence, corrected_text_segment,
           corrected_mention_type, correction_action
@@ -350,9 +380,9 @@ module.exports = (pool) => {
 
       let final_node_id;
 
-      // Step 1: Find or create node in DM.nodes
+      // Step 1: Find or create node in Note.nodes
       const existingNodeRes = await client.query(
-        `SELECT id FROM "DM"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2`,
+        `SELECT id FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2`,
         [name_segment, type]
       );
 
@@ -360,15 +390,15 @@ module.exports = (pool) => {
         final_node_id = existingNodeRes.rows[0].id;
       } else {
         const newNodeRes = await client.query(
-          `INSERT INTO "DM"."nodes" (name, type) VALUES ($1, $2) RETURNING id`,
+          `INSERT INTO "Note"."nodes" (name, type) VALUES ($1, $2) RETURNING id`,
           [name_segment, type]
         );
         final_node_id = newNodeRes.rows[0].id;
       }
 
-      // Step 2: Insert into DM.note_mentions
+      // Step 2: Insert into Note.note_mentions
       const newMentionRes = await client.query(
-        `INSERT INTO "DM"."note_mentions" (
+        `INSERT INTO "Note"."note_mentions" (
           node_id, note_id, start_pos, end_pos, mention_type, source, confidence
         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
         RETURNING *`, // Return the newly created mention
@@ -377,9 +407,9 @@ module.exports = (pool) => {
       const new_mention_record = newMentionRes.rows[0];
       const new_mention_id = new_mention_record.id;
 
-      // Step 3: Log to DM.tagging_corrections
+      // Step 3: Log to Note.tagging_corrections
       await client.query(
-        `INSERT INTO "DM"."tagging_corrections" (
+        `INSERT INTO "Note"."tagging_corrections" (
           note_id, mention_id, original_text_segment, original_mention_type,
           original_source, original_confidence, corrected_text_segment,
           corrected_mention_type, correction_action
@@ -432,8 +462,8 @@ module.exports = (pool) => {
       // Step 1: Fetch Mention Details (Before Deleting)
       const mentionDetailsRes = await client.query(
         `SELECT m.note_id, m.start_pos, m.end_pos, m.mention_type, m.source, m.confidence, n.name AS node_name
-         FROM "DM"."note_mentions" m
-         JOIN "DM"."nodes" n ON m.node_id = n.id
+         FROM "Note"."note_mentions" m
+         JOIN "Note"."nodes" n ON m.node_id = n.id
          WHERE m.id = $1`,
         [mentionId]
       );
@@ -451,9 +481,9 @@ module.exports = (pool) => {
       const confidence_to_log = body_confidence !== undefined ? body_confidence : fetchedMention.confidence;
 
 
-      // Step 2: Log to DM.tagging_corrections
+      // Step 2: Log to Note.tagging_corrections
       await client.query(
-        `INSERT INTO "DM"."tagging_corrections" (
+        `INSERT INTO "Note"."tagging_corrections" (
           note_id, mention_id, original_text_segment, original_mention_type,
           original_source, original_confidence, corrected_text_segment,
           corrected_mention_type, correction_action
@@ -465,9 +495,9 @@ module.exports = (pool) => {
         ]
       );
 
-      // Step 3: Delete from DM.note_mentions
+      // Step 3: Delete from Note.note_mentions
       const deleteMentionRes = await client.query(
-        `DELETE FROM "DM"."note_mentions" WHERE id = $1`,
+        `DELETE FROM "Note"."note_mentions" WHERE id = $1`,
         [mentionId]
       );
 
@@ -485,6 +515,95 @@ module.exports = (pool) => {
       await client.query('ROLLBACK');
       console.error('🔥 Failed to delete mention:', err);
       res.status(500).json({ error: 'Failed to delete mention', message: err.message });
+    } finally {
+      client.release();
+    }
+  });
+
+  // Confirm an existing mention
+  router.post('/mentions/:mentionId/confirm', async (req, res) => {
+    const { mentionId: mentionIdParam } = req.params;
+    const mentionId = parseInt(mentionIdParam, 10);
+
+    if (isNaN(mentionId)) {
+      return res.status(400).json({ error: 'Invalid mentionId parameter.' });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Step 1: Fetch current mention and its node's name, and lock the mention row
+      const originalMentionRes = await client.query(
+        `SELECT
+            m.id, m.note_id, m.node_id, m.start_pos, m.end_pos, m.mention_type,
+            m.source AS original_source, m.confidence AS original_confidence,
+            n.name AS node_name
+         FROM "Note"."note_mentions" m
+         JOIN "Note"."nodes" n ON m.node_id = n.id
+         WHERE m.id = $1
+         FOR UPDATE OF m;`,
+        [mentionId]
+      );
+
+      if (originalMentionRes.rows.length === 0) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Mention not found.' });
+      }
+      const originalMention = originalMentionRes.rows[0];
+
+      // Step 2: Update the mention's source and confidence
+      const updatedMentionRes = await client.query(
+        `UPDATE "Note"."note_mentions"
+         SET source = $1, confidence = $2
+         WHERE id = $3
+         RETURNING *;`,
+        ['USER_CONFIRMED', 1.0, mentionId]
+      );
+
+      if (updatedMentionRes.rowCount === 0) {
+        // Should not happen if the FOR UPDATE lock worked and the row existed
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Mention not found for update (concurrent modification issue?).' });
+      }
+      const updatedMention = updatedMentionRes.rows[0];
+
+      // Step 3: Log to Note.tagging_corrections
+      await client.query(
+        `INSERT INTO "Note"."tagging_corrections"
+          (note_id, mention_id, original_text_segment, original_mention_type,
+          original_source, original_confidence, corrected_text_segment,
+          corrected_mention_type, correction_action, user_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP);`,
+        [
+          originalMention.note_id,
+          mentionId,
+          originalMention.node_name, // original_text_segment
+          originalMention.mention_type, // original_mention_type
+          originalMention.original_source,
+          originalMention.original_confidence,
+          originalMention.node_name, // corrected_text_segment (not changed)
+          originalMention.mention_type, // corrected_mention_type (not changed)
+          'CONFIRM_TAG', // correction_action
+          null // user_id
+        ]
+      );
+
+      await client.query('COMMIT');
+      res.json({
+        success: true,
+        message: "Mention confirmed successfully",
+        // Combine updated mention fields with the original node_name for a complete response object
+        updated_mention: {
+          ...updatedMention,
+          node_name: originalMention.node_name
+        }
+      });
+
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('🔥 Failed to confirm mention:', err);
+      res.status(500).json({ error: 'Failed to confirm mention', message: err.message });
     } finally {
       client.release();
     }
