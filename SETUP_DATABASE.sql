@@ -37,6 +37,24 @@ CREATE TABLE IF NOT EXISTS "Note"."notes" (
     title TEXT,
     content_tsv TSVECTOR
 );
+
+-- Conditionally add user_id column to Note.notes if the table pre-existed without it
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'Note'
+        AND table_name = 'notes'
+        AND column_name = 'user_id'
+    ) THEN
+        ALTER TABLE "Note"."notes" ADD COLUMN user_id INTEGER;
+        RAISE NOTICE 'Column user_id added to Note.notes table.';
+    ELSE
+        RAISE NOTICE 'Column user_id already exists in Note.notes table.';
+    END IF;
+END $$;
+
 COMMENT ON COLUMN "Note"."notes"."user_id" IS 'Identifier of the user who owns the note.';
 COMMENT ON COLUMN "Note"."notes"."content" IS 'The main textual content of the note.';
 COMMENT ON COLUMN "Note"."notes"."created_at" IS 'Timestamp of when the note was created.';
