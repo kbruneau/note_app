@@ -131,6 +131,24 @@ BEGIN
 END $$;
 
 COMMENT ON COLUMN "Note"."node_links"."relationship_type" IS 'Describes the nature of the link (e.g., related, allied_with).';
+
+-- Conditionally add description column to Note.node_links if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'Note'
+        AND table_name = 'node_links'
+        AND column_name = 'description'
+    ) THEN
+        ALTER TABLE "Note"."node_links" ADD COLUMN description TEXT;
+        RAISE NOTICE 'Column description added to Note.node_links table.';
+    ELSE
+        RAISE NOTICE 'Column description already exists in Note.node_links table.';
+    END IF;
+END $$;
+
 COMMENT ON COLUMN "Note"."node_links"."description" IS 'Optional text describing the link.';
 COMMENT ON COLUMN "Note"."node_links"."note_id" IS 'ID of the note from which this link might have been inferred.';
 
