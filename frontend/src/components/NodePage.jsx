@@ -12,6 +12,54 @@ const NodePage = () => {
   const [expandedNotes, setExpandedNotes] = useState([]);
   const navigate = useNavigate();
 
+  // Helper function to format mention source and confidence
+  const formatMentionSource = (source, confidence) => {
+    if (!source) return `(Confidence: ${confidence?.toFixed(2) || 'N/A'})`;
+
+    let sourceDescription = source;
+
+    if (source === 'PHRASEMATCHER_EXACT') {
+      sourceDescription = 'Exact Match (DB)';
+    } else if (source === 'USER_CONFIRMED') {
+      sourceDescription = 'User Confirmed';
+    } else if (source === 'USER_ADDED') {
+      sourceDescription = 'User Added';
+    } else if (source === 'USER_MODIFIED') {
+      sourceDescription = 'User Modified';
+    } else if (source.startsWith('SPACY_NER_')) {
+      const nerType = source.replace('SPACY_NER_', '').replace('_PASSTHROUGH','');
+      if (nerType === 'PERSON' || nerType === 'LOCATION' || nerType === 'ORG') {
+        sourceDescription = `Detected ${nerType.charAt(0) + nerType.slice(1).toLowerCase()} (NLP)`;
+      } else if (nerType.startsWith('LOCATION_')) { // Handles LOCATION_GPE, LOCATION_LOC etc.
+        sourceDescription = `Detected Location (NLP)`;
+      } else if (nerType.startsWith('RAW_')) {
+        const rawNerType = nerType.replace('RAW_', '');
+        sourceDescription = `NLP Raw: ${rawNerType}`;
+      } else {
+         sourceDescription = `Detected (NLP)`;
+      }
+    } else if (source === 'INFERRED_RULE_KEYWORD_ITEM') {
+      sourceDescription = 'Inferred Item (Keyword)';
+    } else if (source === 'INFERRED_RULE_VERB_SPELL') {
+      sourceDescription = 'Inferred Spell (Context)';
+    } else if (source === 'INFERRED_RULE_VERB_ITEM') {
+      sourceDescription = 'Inferred Item (Context)';
+    } else if (source === 'INFERRED_RULE_DEP_PERSON') {
+      sourceDescription = 'Inferred Person (Context)';
+    } else if (source.startsWith('INFERRED_RULE_')) { // More generic rule-based
+        const ruleType = source.replace('INFERRED_RULE_', '');
+        sourceDescription = `Inferred as ${ruleType.charAt(0) + ruleType.slice(1).toLowerCase()} (Rule)`;
+    } else if (source.startsWith('INFERRED_')) {
+      const inferredDetail = source.replace('INFERRED_', '').replace(/_/g, ' ');
+      sourceDescription = `Inferred (${inferredDetail.charAt(0) + inferredDetail.slice(1).toLowerCase()})`;
+    } else if (source === 'UNKNOWN') {
+      sourceDescription = 'System Suggestion (Low Confidence)';
+    }
+
+    const confidenceText = confidence !== null && confidence !== undefined ? `Conf: ${confidence.toFixed(2)}` : 'Conf: N/A';
+    return `${sourceDescription} (${confidenceText})`;
+  };
+
   // State for correction modal
   const [editingMention, setEditingMention] = useState(null);
   const [newMentionType, setNewMentionType] = useState('');
@@ -245,10 +293,10 @@ const NodePage = () => {
                 <div className="entity-meta">
                   <span>
                     In Note <Link to={`/#note-${m.note_id}`}>#{m.note_id}</Link>:
-                    Type: {formatType(m.mention_type)} (Conf: {m.confidence?.toFixed(2)}, Src: {m.source})
+                    Type: {formatType(m.mention_type)} ({formatMentionSource(m.source, m.confidence)})
                   </span>
-                  <div className="mention-actions"> {/* Changed from style float to a class for better control */}
-                    {!['USER_CONFIRMED', 'USER_ADDED', 'PHRASEMATCHER_EXACT'].includes(m.source) && (
+                  <div className="mention-actions">
+                    {!['USER_CONFIRMED', 'USER_ADDED', 'PHRASEMATCHER_EXACT', 'USER_MODIFIED'].includes(m.source) && (
                       <button
                         onClick={() => handleQuickConfirm(m.id)}
                         className="button-icon button-quick-confirm"
