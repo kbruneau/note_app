@@ -109,12 +109,29 @@ CREATE TABLE IF NOT EXISTS "Note"."node_links" (
     relationship_type TEXT DEFAULT 'related',
     description TEXT,
     note_id INTEGER,
-    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(source_node_id, target_node_id, relationship_type)
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    -- Removed UNIQUE constraint from here
 );
 COMMENT ON COLUMN "Note"."node_links"."relationship_type" IS 'Describes the nature of the link (e.g., related, allied_with).';
 COMMENT ON COLUMN "Note"."node_links"."description" IS 'Optional text describing the link.';
 COMMENT ON COLUMN "Note"."node_links"."note_id" IS 'ID of the note from which this link might have been inferred.';
+
+-- Conditionally add relationship_type column to Note.node_links if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'Note'
+        AND table_name = 'node_links'
+        AND column_name = 'relationship_type'
+    ) THEN
+        ALTER TABLE "Note"."node_links" ADD COLUMN relationship_type TEXT DEFAULT 'related';
+        RAISE NOTICE 'Column relationship_type added to Note.node_links table.';
+    ELSE
+        RAISE NOTICE 'Column relationship_type already exists in Note.node_links table.';
+    END IF;
+END $$;
 
 
 CREATE TABLE IF NOT EXISTS "Note"."node_relationships" (
@@ -376,6 +393,12 @@ ALTER TABLE "Note"."tagging_corrections" ADD CONSTRAINT fk_tagging_corrections_n
 ALTER TABLE "Note"."tagging_corrections" DROP CONSTRAINT IF EXISTS fk_tagging_corrections_mention;
 ALTER TABLE "Note"."tagging_corrections" ADD CONSTRAINT fk_tagging_corrections_mention
     FOREIGN KEY (mention_id) REFERENCES "Note"."note_mentions"(id) ON DELETE SET NULL;
+
+-- Apply unique constraint for source_node_id, target_node_id, relationship_type on Note.node_links
+ALTER TABLE "Note"."node_links" DROP CONSTRAINT IF EXISTS node_links_src_tgt_rel_type_key;
+ALTER TABLE "Note"."node_links" ADD CONSTRAINT node_links_src_tgt_rel_type_key
+    UNIQUE (source_node_id, target_node_id, relationship_type);
+RAISE NOTICE 'Applied unique constraint node_links_src_tgt_rel_type_key to Note.node_links.';
 
 -- Constraints for "core" schema
 ALTER TABLE "core"."names" DROP CONSTRAINT IF EXISTS fk_names_name_table;
