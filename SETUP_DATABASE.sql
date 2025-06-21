@@ -236,6 +236,24 @@ CREATE TABLE IF NOT EXISTS "core"."items" (
     "Requires Attunement" text,
     "Rarity" text
 );
+
+-- Conditionally add "Rarity" column to core.items if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'core'
+        AND table_name = 'items'
+        AND column_name = 'Rarity' -- Case-sensitive match
+    ) THEN
+        ALTER TABLE "core"."items" ADD COLUMN "Rarity" TEXT; -- Add with quotes to preserve case
+        RAISE NOTICE 'Column "Rarity" added to core.items table.';
+    ELSE
+        RAISE NOTICE 'Column "Rarity" already exists in core.items table.';
+    END IF;
+END $$;
+
 -- Example Primary Key (uncomment and adjust if 'id' is the intended PK):
 -- ALTER TABLE "core"."items" ADD CONSTRAINT pk_items PRIMARY KEY (id);
 
