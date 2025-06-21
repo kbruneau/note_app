@@ -969,6 +969,33 @@ CREATE TABLE IF NOT EXISTS "core"."spells" (
     archetype text,
     level_int smallint
 );
+
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'core'
+          AND table_name = 'spells'
+          AND column_name = 'level_int'
+    ) THEN
+        ALTER TABLE "core"."spells" ADD COLUMN level_int SMALLINT;
+        RAISE NOTICE 'Column level_int added to core.spells table.';
+
+        -- Populate level_int based on level text (if it's a number)
+        EXECUTE '
+            UPDATE "core"."spells"
+            SET level_int = CASE
+                WHEN level ~ ''^\d+$'' THEN level::smallint
+                ELSE NULL
+            END
+        ';
+    ELSE
+        RAISE NOTICE 'Column level_int already exists in core.spells table.';
+    END IF;
+END $$;
+
+COMMENT ON COLUMN "core"."spells"."level_int" IS 'Integer representation of spell level for sorting/filtering.';
 -- Example Primary Key (uncomment and adjust if 'id' is the intended PK):
 -- ALTER TABLE "core"."spells" ADD CONSTRAINT pk_spells PRIMARY KEY (id);
 
