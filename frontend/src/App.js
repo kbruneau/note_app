@@ -6,21 +6,34 @@ import NoteEntry from './components/NoteEntry';
 import NodePage from './components/NodePage';
 import EditNotePage from './components/EditNotePage';
 import NameGenerator from './components/NameGenerator'; // Import NameGenerator
+import RegistrationPage from './components/RegistrationPage'; // Import RegistrationPage
+import LoginPage from './components/LoginPage'; // Import LoginPage
+import PrivateRoute from './components/PrivateRoute'; // Import PrivateRoute
 
 function App() {
   return (
     <Router>
       <Routes>
-        <Route path="/" element={<MainLayout />}> {/* Parent route using MainLayout */}
-          <Route index element={<HomePage />} /> {/* Default for / (e.g., Notes tab) */}
-          {/* Route for entity types like /people, /places. HomePage will handle :entityType */}
+        {/* Protected routes that use MainLayout */}
+        <Route
+          path="/"
+          element={
+            <PrivateRoute>
+              <MainLayout />
+            </PrivateRoute>
+          }
+        >
+          <Route index element={<HomePage />} />
           <Route path=":entityType" element={<HomePage />} />
-          <Route path="notes/entry" element={<NoteEntry />} /> {/* New path */}
+          <Route path="notes/entry" element={<NoteEntry />} />
           <Route path="node/:nodeId" element={<NodePage />} />
-          <Route path="notes/:id/edit" element={<EditNotePage />} /> {/* Path kept similar for notes edit */}
-          <Route path="tools/name-generator" element={<NameGenerator />} /> {/* New path */}
+          <Route path="notes/:id/edit" element={<EditNotePage />} />
+          <Route path="tools/name-generator" element={<NameGenerator />} />
         </Route>
-        {/* Other routes that should NOT use MainLayout can be defined here */}
+
+        {/* Standalone routes for authentication (no MainLayout) */}
+        <Route path="/register" element={<RegistrationPage />} />
+        <Route path="/login" element={<LoginPage />} />
       </Routes>
     </Router>
   );

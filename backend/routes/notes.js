@@ -1,15 +1,54 @@
 const express = require('express');
+const jwt = require('jsonwebtoken'); // Added for JWT verification
 // const { spawn } = require('child_process'); // Removed
 // const path = require('path'); // Removed
 const axios = require('axios'); // Added axios
 
+// Middleware to authenticate JWT
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+  if (token == null) {
+    return res.sendStatus(401); // Unauthorized
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      console.error('JWT verification error:', err);
+      return res.sendStatus(403); // Forbidden
+    }
+    req.user = user; // Add user payload to request object
+    next();
+  });
+};
+
 module.exports = (pool) => {
   const router = express.Router();
 
+  // Helper function to check note ownership
+  const checkNoteOwnership = async (noteId, userId) => {
+    if (isNaN(parseInt(noteId, 10))) { // Ensure noteId is a number before querying
+        return { error: 'Invalid Note ID format.', status: 400 };
+    }
+    const result = await pool.query('SELECT user_id FROM "Note"."notes" WHERE id = $1', [noteId]);
+    if (result.rows.length === 0) {
+      return { error: 'Note not found.', status: 404 };
+    }
+    if (result.rows[0].user_id !== userId) {
+      return { error: 'Forbidden: You do not own this note.', status: 403 };
+    }
+    return { authorized: true };
+  };
+
   // Add a new note
-  router.post('/add-note', async (req, res) => {
+  router.post('/add-note', authenticateToken, async (req, res) => {
     const { content, title } = req.body; // Add title to destructuring
+    const userId = req.user.userId; // Extract user_id from authenticated user
+
     if (!content) return res.status(400).json({ error: 'Missing note content' });
+    if (!userId) return res.status(400).json({ error: 'User ID not found in token' });
+
 
     // Using a client for explicit transaction for note insert
     const client = await pool.connect();
@@ -17,10 +56,10 @@ module.exports = (pool) => {
 
     try {
       await client.query('BEGIN');
-      // Step 1: Insert the note into the database, including title
+      // Step 1: Insert the note into the database, including title and user_id
       const noteInsertResult = await client.query(
-        `INSERT INTO "Note"."notes" (content, title) VALUES ($1, $2) RETURNING id, title, content, created_at`,
-        [content, title || null] // Use title or null if not provided
+        `INSERT INTO "Note"."notes" (content, title, user_id) VALUES ($1, $2, $3) RETURNING id, title, content, created_at, user_id`,
+        [content, title || null, userId] // Use title or null if not provided
       );
       newNote = noteInsertResult.rows[0];
       await client.query('COMMIT');
@@ -60,14 +99,18 @@ module.exports = (pool) => {
     // client for tagger service call is managed by axios
   });
 
-  // Get all notes
-  router.get('/notes', async (req, res) => {
+  // Get all notes for the authenticated user
+  router.get('/notes', authenticateToken, async (req, res) => {
+    const userId = req.user.userId;
+    if (!userId) return res.status(400).json({ error: 'User ID not found in token' });
+
     try {
       const { rows } = await pool.query(`
-        SELECT id, title, content, created_at
+        SELECT id, title, content, created_at, user_id
         FROM "Note"."notes"
+        WHERE user_id = $1
         ORDER BY created_at DESC
-      `);
+      `, [userId]);
       res.json(rows);
     } catch (err) {
       res.status(500).json({ error: 'Failed to fetch notes', message: err.message });
@@ -75,14 +118,16 @@ module.exports = (pool) => {
   });
 
   // Update a note
-  router.put('/notes/:id', async (req, res) => {
+  router.put('/notes/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
     const noteId = parseInt(id, 10);
     const { content, title } = req.body; // Add title
+    const userId = req.user.userId; // Get user ID from token
 
     if (isNaN(noteId)) {
       return res.status(400).json({ error: 'Invalid note ID.' });
     }
+    if (!userId) return res.status(403).json({ error: 'User ID not found in token.' }); // Or 401
 
     // Ensure at least one field is being updated
     if (content === undefined && title === undefined) {
@@ -109,7 +154,9 @@ module.exports = (pool) => {
         queryParams.push(content);
       }
 
-      queryParams.push(noteId); // For WHERE id = $N
+      // Add noteId and userId for the WHERE clause
+      queryParams.push(noteId);
+      queryParams.push(userId);
 
       if (setClauses.length === 0) {
          // Should be caught by the undefined check above, but as a safeguard
@@ -118,14 +165,20 @@ module.exports = (pool) => {
         return res.status(400).json({ error: "No content or title provided for update." });
       }
 
-      const updateQuery = `UPDATE "Note"."notes" SET ${setClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${paramIndex} RETURNING id, title, content, created_at, updated_at;`;
+      const updateQuery = `UPDATE "Note"."notes" SET ${setClauses.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = $${paramIndex} AND user_id = $${paramIndex + 1} RETURNING id, title, content, created_at, updated_at;`;
 
       const updateResult = await client.query(updateQuery, queryParams);
 
       if (updateResult.rowCount === 0) {
+        // Check if the note exists at all, to differentiate between 404 and 403
+        const noteExistsResult = await client.query('SELECT id FROM "Note"."notes" WHERE id = $1', [noteId]);
         await client.query('ROLLBACK');
         client.release();
-        return res.status(404).json({ error: 'Note not found or not updated.' });
+        if (noteExistsResult.rowCount === 0) {
+          return res.status(404).json({ error: 'Note not found.' });
+        } else {
+          return res.status(403).json({ error: 'Forbidden: You do not own this note or no changes were made.' });
+        }
       }
 
       const updatedNoteFromDB = updateResult.rows[0];
@@ -173,16 +226,43 @@ module.exports = (pool) => {
   });
 
   // Delete a note
-  router.delete('/notes/:id', async (req, res) => {
+  router.delete('/notes/:id', authenticateToken, async (req, res) => {
     const { id } = req.params;
+    const noteId = parseInt(id, 10);
+    const userId = req.user.userId;
+
+    if (isNaN(noteId)) {
+      return res.status(400).json({ error: 'Invalid note ID.' });
+    }
+    if (!userId) return res.status(403).json({ error: 'User ID not found in token.' });
+
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
-      await client.query(`DELETE FROM "Note"."note_mentions" WHERE note_id = $1`, [id]);
-      await client.query(`DELETE FROM "Note"."node_links" WHERE note_id = $1`, [id]);
-      await client.query(`DELETE FROM "Note"."notes" WHERE id = $1`, [id]);
+      // It's generally safe to delete related data first if the final note deletion is conditional on user_id.
+      // If the note doesn't belong to the user, these deletes won't do harm if note_id is globally unique.
+      // However, for strictness, one might fetch note's user_id first.
+      await client.query(`DELETE FROM "Note"."note_mentions" WHERE note_id = $1`, [noteId]);
+      await client.query(`DELETE FROM "Note"."node_links" WHERE note_id = $1`, [noteId]);
+
+      const deleteResult = await client.query(
+        `DELETE FROM "Note"."notes" WHERE id = $1 AND user_id = $2`,
+        [noteId, userId]
+      );
+
+      if (deleteResult.rowCount === 0) {
+        // Check if the note existed at all to return 404 or 403
+        const noteExistsResult = await client.query('SELECT id FROM "Note"."notes" WHERE id = $1', [noteId]);
+        await client.query('ROLLBACK');
+        if (noteExistsResult.rowCount === 0) {
+          return res.status(404).json({ error: 'Note not found.' });
+        } else {
+          return res.status(403).json({ error: 'Forbidden: You do not own this note.' });
+        }
+      }
+
       await client.query('COMMIT');
-      res.json({ success: true });
+      res.json({ success: true, message: 'Note deleted successfully.' });
     } catch (err) {
       await client.query('ROLLBACK');
       console.error('🔥 Failed to delete note:', err);
@@ -192,8 +272,21 @@ module.exports = (pool) => {
     }
   });
 
-  router.post('/manual-tag', async (req, res) => {
+  router.post('/manual-tag', authenticateToken, async (req, res) => {
     const { name, type, note_id, start_pos, end_pos, tag } = req.body;
+    const userId = req.user.userId;
+
+    if (!note_id) {
+      return res.status(400).json({ error: 'note_id is required in the request body.' });
+    }
+    if (!userId) return res.status(403).json({ error: 'User ID not found in token.' });
+
+
+    const ownership = await checkNoteOwnership(note_id, userId);
+    if (!ownership.authorized) {
+      return res.status(ownership.status).json({ error: ownership.error });
+    }
+
     const client = await pool.connect();
   
     try {
@@ -240,8 +333,9 @@ module.exports = (pool) => {
   });
 
   // Correct a mention
-  router.post('/mentions/:mentionId/correct', async (req, res) => {
+  router.post('/mentions/:mentionId/correct', authenticateToken, async (req, res) => {
     const { mentionId } = req.params;
+    const userId = req.user.userId;
     const {
       new_name_segment, // Optional: Corrected text of the mention
       new_type,         // Required: Corrected entity type
@@ -258,6 +352,12 @@ module.exports = (pool) => {
       return res.status(400).json({
         error: 'Missing required fields: new_type, note_id, original_text_segment, original_mention_type are required.'
       });
+    }
+    if (!userId) return res.status(403).json({ error: 'User ID not found in token.' });
+
+    const ownership = await checkNoteOwnership(note_id, userId);
+    if (!ownership.authorized) {
+      return res.status(ownership.status).json({ error: ownership.error });
     }
 
     const client = await pool.connect();
@@ -354,9 +454,10 @@ module.exports = (pool) => {
   });
 
   // Add a new mention to a note
-  router.post('/notes/:noteId/mentions/add', async (req, res) => {
+  router.post('/notes/:noteId/mentions/add', authenticateToken, async (req, res) => {
     const { noteId: note_id_param } = req.params; // note_id from URL
     const noteId = parseInt(note_id_param, 10);
+    const userId = req.user.userId;
 
     const {
       name_segment, // Required: Text of the new mention
@@ -372,6 +473,12 @@ module.exports = (pool) => {
     }
     if (isNaN(noteId)) {
         return res.status(400).json({ error: 'Invalid noteId parameter.' });
+    }
+    if (!userId) return res.status(403).json({ error: 'User ID not found in token.' });
+
+    const ownership = await checkNoteOwnership(noteId, userId); // noteId from params
+    if (!ownership.authorized) {
+      return res.status(ownership.status).json({ error: ownership.error });
     }
 
     const client = await pool.connect();
@@ -438,9 +545,10 @@ module.exports = (pool) => {
   });
 
   // Delete a mention
-  router.delete('/mentions/:mentionId', async (req, res) => {
+  router.delete('/mentions/:mentionId', authenticateToken, async (req, res) => {
     const { mentionId: mention_id_param } = req.params;
     const mentionId = parseInt(mention_id_param, 10);
+    const userId = req.user.userId;
 
     // Optional request body parameters for more complete logging, though fetching is preferred.
     const {
@@ -454,12 +562,13 @@ module.exports = (pool) => {
     if (isNaN(mentionId)) {
       return res.status(400).json({ error: 'Invalid mentionId parameter.' });
     }
+    if (!userId) return res.status(403).json({ error: 'User ID not found in token.' });
 
     const client = await pool.connect();
     try {
       await client.query('BEGIN');
 
-      // Step 1: Fetch Mention Details (Before Deleting)
+      // Step 1: Fetch Mention Details (Before Deleting) including note_id
       const mentionDetailsRes = await client.query(
         `SELECT m.note_id, m.start_pos, m.end_pos, m.mention_type, m.source, m.confidence, n.name AS node_name
          FROM "Note"."note_mentions" m
@@ -470,9 +579,19 @@ module.exports = (pool) => {
 
       if (mentionDetailsRes.rows.length === 0) {
         await client.query('ROLLBACK');
+        client.release(); // Release client before early return
         return res.status(404).json({ error: 'Mention not found.' });
       }
       const fetchedMention = mentionDetailsRes.rows[0];
+      const note_id_of_mention = fetchedMention.note_id;
+
+      // Step 1.5: Check ownership of the note
+      const ownership = await checkNoteOwnership(note_id_of_mention, userId);
+      if (!ownership.authorized) {
+        await client.query('ROLLBACK');
+        client.release();
+        return res.status(ownership.status).json({ error: ownership.error });
+      }
 
       const note_id_to_log = body_note_id !== undefined ? body_note_id : fetchedMention.note_id;
       const text_to_log = body_text_segment || fetchedMention.node_name; // Prefer body if provided, else fetched node name
@@ -521,13 +640,15 @@ module.exports = (pool) => {
   });
 
   // Confirm an existing mention
-  router.post('/mentions/:mentionId/confirm', async (req, res) => {
+  router.post('/mentions/:mentionId/confirm', authenticateToken, async (req, res) => {
     const { mentionId: mentionIdParam } = req.params;
     const mentionId = parseInt(mentionIdParam, 10);
+    const userId = req.user.userId;
 
     if (isNaN(mentionId)) {
       return res.status(400).json({ error: 'Invalid mentionId parameter.' });
     }
+    if (!userId) return res.status(403).json({ error: 'User ID not found in token.' });
 
     const client = await pool.connect();
     try {
@@ -548,9 +669,19 @@ module.exports = (pool) => {
 
       if (originalMentionRes.rows.length === 0) {
         await client.query('ROLLBACK');
+        client.release(); // Release client
         return res.status(404).json({ error: 'Mention not found.' });
       }
       const originalMention = originalMentionRes.rows[0];
+      const note_id_of_mention = originalMention.note_id;
+
+      // Step 1.5: Check ownership of the note
+      const ownership = await checkNoteOwnership(note_id_of_mention, userId);
+      if (!ownership.authorized) {
+        await client.query('ROLLBACK');
+        client.release();
+        return res.status(ownership.status).json({ error: ownership.error });
+      }
 
       // Step 2: Update the mention's source and confidence
       const updatedMentionRes = await client.query(
@@ -585,7 +716,7 @@ module.exports = (pool) => {
           originalMention.node_name, // corrected_text_segment (not changed)
           originalMention.mention_type, // corrected_mention_type (not changed)
           'CONFIRM_TAG', // correction_action
-          null // user_id
+          userId // user_id from token
         ]
       );
 
