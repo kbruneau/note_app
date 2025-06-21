@@ -95,6 +95,10 @@ const MainLayout = () => {
       });
     }
   };
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    navigate('/login');
+  };
 
   let displayedPcs = [...playerCharacters];
   if (pcSortMode === 'az') {

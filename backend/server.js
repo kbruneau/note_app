@@ -20,15 +20,14 @@ const randomNameRoutes = require('./routes/randomName')(pool);
 const noteRoutes = require('./routes/notes')(pool);
 const nodesRoutes = require('./routes/nodes')(pool);
 const entitiesRoutes = require('./routes/entities')(pool);
-const authRoutes = require('./routes/auth'); // auth.js exports router directly
+const authRoutes = require('./routes/auth'); // exports router
 
 // Register routes
 app.use('/api', randomNameRoutes);
 app.use('/api', noteRoutes);
 app.use('/api', nodesRoutes);
 app.use('/api', entitiesRoutes);
-app.use('/api/auth', authRoutes); // Register auth routes under /api/auth
-
+app.use('/api/auth', authRoutes);
 
 // Health check
 app.get('/api/health', async (req, res) => {
@@ -40,4 +39,11 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-module.exports = app; // Export the app instance for testing
+if (require.main === module) {
+  const PORT = process.env.PORT || 4000;
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+module.exports = app;
