@@ -174,6 +174,7 @@ const MainLayout = () => {
           ))}
         </nav>
         <div className="header-actions">
+          <button onClick={handleLogout} className="logout-button">Logout</button>
           <div className="notification-bell-area">
             <button onClick={toggleTagNotifications} className="button-icon notification-bell" title="Show new tags">
               🔔
@@ -198,7 +199,6 @@ const MainLayout = () => {
               </div>
             )}
           </div>
-          <button onClick={handleLogout} className="logout-button">Logout</button>
         </div>
       </div>
 

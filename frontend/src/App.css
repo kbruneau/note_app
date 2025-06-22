@@ -849,7 +849,7 @@ select {
   cursor: pointer;
   font-family: var(--font-family-headings);
   font-size: 0.9rem;
-  margin-left: 1rem; /* Space it from other navbar items */
+  /* margin-left: 1rem; */ /* Removed, spacing handled by header-actions gap */
   transition: background-color 0.2s ease;
 }
 
@@ -862,17 +862,24 @@ select {
   display: flex;
   align-items: center;
   margin-left: auto; /* Pushes actions to the right of the navbar */
+  gap: 1rem; /* Creates space between logout button and bell area */
 }
 
 .notification-bell-area {
   position: relative;
-  margin-right: 1rem; /* Space before logout button */
+  /* margin-right: 1rem; */ /* Removed, spacing handled by header-actions gap */
 }
 
 .notification-bell {
   font-size: 1.5rem; /* Larger bell icon */
   padding: 0.2em 0.4em;
   position: relative; /* For badge positioning */
+  color: var(--text-color-main); /* Thematic color for the bell icon */
+}
+
+.notification-bell:hover, .notification-bell:focus {
+  color: var(--accent-color-primary); /* Darken on hover, similar to other icons */
+  background-color: rgba(0,0,0,0.03); /* Slight background on hover */
 }
 
 .notification-badge {
