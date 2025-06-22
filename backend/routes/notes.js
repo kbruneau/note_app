@@ -61,7 +61,11 @@ module.exports = (pool) => {
     // Step 2: Call the tagger service (outside the initial DB transaction for note creation)
     try {
       // Use newNote.content and newNote.id for consistency, as title is now part of newNote
-      const taggerPayload = { note_id: newNote.id, text: newNote.content };
+      const taggerPayload = {
+        note_id: newNote.id,
+        text: newNote.content,
+        user_id: userId // Add user_id to the payload for the tagger service
+      };
       const taggerServiceUrl = 'http://localhost:5001/tag';
       const taggerResponse = await axios.post(taggerServiceUrl, taggerPayload);
       const taggedNodes = taggerResponse.data;
@@ -179,7 +183,11 @@ module.exports = (pool) => {
 
       // Call tagger service after successful DB update
       try {
-        const taggerPayload = { note_id: noteId, text: updatedNoteContentForTagger };
+        const taggerPayload = {
+          note_id: noteId,
+          text: updatedNoteContentForTagger,
+          user_id: userId // Add user_id to the payload for the tagger service
+        };
         const taggerServiceUrl = 'http://localhost:5001/tag';
         const taggerResponse = await axios.post(taggerServiceUrl, taggerPayload);
 
