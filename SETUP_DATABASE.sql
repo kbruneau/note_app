@@ -949,7 +949,7 @@ COMMENT ON COLUMN "Note"."character_sheets"."created_at" IS 'Timestamp of when t
 COMMENT ON COLUMN "Note"."character_sheets"."updated_at" IS 'Timestamp of when the character sheet was last updated.';
 
 -- Trigger function to automatically update updated_at timestamp
-CREATE OR REPLACE FUNCTION update_modified_column()
+CREATE OR REPLACE FUNCTION "Note".update_modified_column()
 RETURNS TRIGGER AS $$
 BEGIN
     NEW.updated_at = CURRENT_TIMESTAMP;
@@ -963,7 +963,7 @@ DROP TRIGGER IF EXISTS character_sheets_updated_at_trigger ON "Note"."character_
 CREATE TRIGGER character_sheets_updated_at_trigger
 BEFORE UPDATE ON "Note"."character_sheets"
 FOR EACH ROW
-EXECUTE FUNCTION update_modified_column();
+EXECUTE FUNCTION "Note".update_modified_column();
 
 
 -- Schema: DM
@@ -1175,7 +1175,7 @@ CREATE TABLE IF NOT EXISTS "class"."classes" (
 CREATE INDEX IF NOT EXISTS notes_content_tsv_idx ON "Note"."notes" USING GIN(content_tsv);
 
 -- Create or replace the trigger function
-CREATE OR REPLACE FUNCTION tsvector_update_trigger_function()
+CREATE OR REPLACE FUNCTION "Note".tsvector_update_trigger_function()
 RETURNS TRIGGER AS $$
 BEGIN
   NEW.content_tsv := to_tsvector('english', COALESCE(NEW.content,'') || ' ' || COALESCE(NEW.title,''));
@@ -1187,7 +1187,7 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS notes_tsv_update_trigger ON "Note"."notes";
 CREATE TRIGGER notes_tsv_update_trigger
 BEFORE INSERT OR UPDATE ON "Note"."notes"
-FOR EACH ROW EXECUTE FUNCTION tsvector_update_trigger_function();
+FOR EACH ROW EXECUTE FUNCTION "Note".tsvector_update_trigger_function();
 
 -- Comment: To populate existing rows, run this manually after setup:
 -- UPDATE "Note"."notes" SET content_tsv = to_tsvector('english', COALESCE(content,'') || ' ' || COALESCE(title,''));

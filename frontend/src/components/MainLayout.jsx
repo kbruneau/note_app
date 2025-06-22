@@ -170,7 +170,17 @@ const MainLayout = () => {
             <div key={pc.id} className="pc-tile">
               <div className="pc-tile-info">
                 <Link to={`/node/${pc.id}`} className="entity-link">
-                  <h4>{pc.name}</h4>
+                   <h4>
+                     {pc.name}
+                     {(pc.race_name || pc.main_class) && (
+                       <span className="pc-details-sidebar">
+                         {' - '}
+                         {pc.race_name && <span>{pc.race_name}</span>}
+                         {pc.race_name && pc.main_class && <span> </span>} {/* Space between */}
+                         {pc.main_class && <span>{pc.main_class}</span>}
+                       </span>
+                     )}
+                   </h4>
                 </Link>
                  {pc.location_name && pc.location_id && (
                    <div className="pc-last-location">

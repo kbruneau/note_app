@@ -62,9 +62,13 @@ module.exports = (pool) => {
             pc_main.is_player_character,
             pc_main.is_party_member,
             array_to_json(pc_main.tags) AS tags,
+            cs.main_class,
+            r.name AS race_name,
             lpl.location_id,
             lpl.location_name
         FROM "Note"."nodes" pc_main
+        LEFT JOIN "Note"."character_sheets" cs ON pc_main.id = cs.node_id
+        LEFT JOIN "race"."races" r ON cs.race_id = r.id
         LEFT JOIN (
             SELECT * FROM LatestPCNoteLocationMentions WHERE loc_rn = 1
         ) lpl ON pc_main.id = lpl.pc_id
