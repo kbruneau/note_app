@@ -26,8 +26,9 @@ const MainLayout = () => {
     try {
       const res = await apiClient.get('/entities/by-type/PERSON');
       const allPersons = res.data || [];
-      const pcs = allPersons.filter(p => p.tags && p.tags.includes('Player Character'));
-      const party = allPersons.filter(p => p.tags && p.tags.includes('Party Member'));
+      // Filter by new boolean flags
+      const pcs = allPersons.filter(p => p.is_player_character === true);
+      const party = allPersons.filter(p => p.is_party_member === true);
       setPlayerCharacters(pcs);
       setPartyMembers(party);
     } catch (err) {
@@ -43,18 +44,29 @@ const MainLayout = () => {
     fetchCharacters();
   }, []);
 
-  const handleRemoveSidebarTag = async (nodeId, tagToRemove) => {
-    if (!window.confirm(`Are you sure you want to remove the "${tagToRemove}" tag from this character?`)) {
+  const handleRemoveSidebarFlag = async (nodeId, flagToRemove) => {
+    // Find the character to get their name and current flag states
+    const characterNode = playerCharacters.find(p => p.id === nodeId) || partyMembers.find(p => p.id === nodeId);
+    const characterName = characterNode ? characterNode.name : 'this character';
+    const flagDescription = flagToRemove === 'is_player_character' ? 'Player Character' : 'Party Member';
+
+    if (!window.confirm(`Are you sure you want to remove the "${flagDescription}" status from ${characterName}?`)) {
       return;
     }
     try {
-      await apiClient.delete(`/nodes/${nodeId}/tags`, { data: { tag_to_remove: tagToRemove } });
-      // Refresh the character lists
-      fetchCharacters();
-      alert(`Tag "${tagToRemove}" removed successfully.`);
+      // We must send both flags to the backend, preserving the one not being changed.
+      const payload = {
+        newType: 'PERSON', // Keep type as PERSON
+        isPlayerCharacter: flagToRemove === 'is_player_character' ? false : (characterNode ? !!characterNode.is_player_character : false),
+        isPartyMember: flagToRemove === 'is_party_member' ? false : (characterNode ? !!characterNode.is_party_member : false),
+      };
+
+      await apiClient.patch(`/nodes/${nodeId}/type`, payload);
+      fetchCharacters(); // Refresh lists
+      alert(`"${flagDescription}" status removed successfully from ${characterName}.`);
     } catch (err) {
-      console.error(`Failed to remove tag "${tagToRemove}":`, err);
-      alert(`Failed to remove tag: ${err.response?.data?.message || err.message}`);
+      console.error(`Failed to remove ${flagDescription} status for node ${nodeId}:`, err);
+      alert(`Failed to remove status: ${err.response?.data?.message || err.message}`);
     }
   };
 
@@ -156,12 +168,14 @@ const MainLayout = () => {
                   <h4>{pc.name}</h4>
                 </Link>
                 {/* Filter out the specific 'Player Character' tag before mapping, if other tags exist */}
+                {/* This pc.tags logic is now potentially obsolete if we only rely on boolean flags */}
+                {/* For now, keeping it doesn't hurt, but ideally it would be removed if not used */}
                 {pc.tags && pc.tags.filter(tag => tag !== "Player Character").map(tag =>
                   <small key={tag} className="tag pc-general-tag">{tag}</small>
                 )}
               </div>
               <button
-                onClick={() => handleRemoveSidebarTag(pc.id, "Player Character")}
+                onClick={() => handleRemoveSidebarFlag(pc.id, "is_player_character")}
                 className="button-icon button-remove-sidebar-tag"
                 title="Remove from Player Characters"
               >×</button>
@@ -180,12 +194,13 @@ const MainLayout = () => {
                 <Link to={`/node/${member.id}`} className="entity-link">
                   <h4>{member.name}</h4>
                 </Link>
+                {/* This member.tags logic is now potentially obsolete */}
                 {member.tags && member.tags.filter(tag => tag !== "Party Member").map(tag =>
                   <small key={tag} className="tag party-general-tag">{tag}</small>
                 )}
               </div>
               <button
-                onClick={() => handleRemoveSidebarTag(member.id, "Party Member")}
+                onClick={() => handleRemoveSidebarFlag(member.id, "is_party_member")}
                 className="button-icon button-remove-sidebar-tag"
                 title="Remove from Party Members"
               >×</button>

@@ -8,7 +8,7 @@ module.exports = (pool) => {
     const type = req.params.type;
     try {
       const { rows } = await pool.query(`
-        SELECT id, name, type, sub_type, source, created_at, array_to_json(tags) AS tags
+        SELECT id, name, type, sub_type, source, created_at, array_to_json(tags) AS tags, is_player_character, is_party_member
         FROM "Note"."nodes"
         WHERE type = $1
         ORDER BY name
