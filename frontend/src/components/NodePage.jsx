@@ -286,37 +286,37 @@ const NodePage = () => {
             )}
           </p>
 
-          <h3>Mentions in Notes</h3>
+          <h3>Where This Appears in Your Notes</h3>
           <ul style={{ listStyle: 'none', padding: 0 }}>
             {mentions.map((m) => (
               <li key={m.id} className="mention-entry" style={getMentionStyle(m)}>
                 <div className="entity-meta">
                   <span>
                     In Note <Link to={`/#note-${m.note_id}`}>#{m.note_id}</Link>:
-                    Type: {formatType(m.mention_type)} ({formatMentionSource(m.source, m.confidence)})
+                    Tagged as: {formatType(m.mention_type)} ({formatMentionSource(m.source, m.confidence)})
                   </span>
                   <div className="mention-actions">
                     {!['USER_CONFIRMED', 'USER_ADDED', 'PHRASEMATCHER_EXACT', 'USER_MODIFIED'].includes(m.source) && (
                       <button
                         onClick={() => handleQuickConfirm(m.id)}
                         className="button-icon button-quick-confirm"
-                        title="Quick Confirm Tag"
+                        title="Confirm This Tag"
                       > ✔️ </button>
                     )}
                     <button
                       onClick={() => handleOpenEditModal(m)}
                       className="button-icon"
-                      title="Correct Mention"
+                      title="Edit This Tag or Mention"
                     > ✏️ </button>
                     <button
                       onClick={() => navigate(`/notes/${m.note_id}/edit`)}
                       className="button-icon"
-                      title="Edit Note Content"
+                      title="Edit Full Note"
                     > 📝 </button>
                     <button
                       onClick={() => toggleNote(m.note_id)}
                       className="button-icon"
-                      title={expandedNotes.includes(m.note_id) ? 'Collapse Note' : 'Expand Note'}
+                      title={expandedNotes.includes(m.note_id) ? 'Collapse Note Details' : 'Expand Note Details'}
                     >
                       {expandedNotes.includes(m.note_id) ? '➖' : '➕'}
                     </button>
@@ -337,15 +337,15 @@ const NodePage = () => {
           </ul>
         </>
       ) : (
-        <p>Loading...</p>
+        <p>Loading details...</p>
       )}
 
       {editingMention && (
         <div className="modal-backdrop">
           <div className="modal-content">
-            <h3>Correct Mention</h3>
+            <h3>Edit Tag or Mention</h3>
             <div style={{ marginBottom: '10px' }}>
-              <label htmlFor="editedMentionName" style={{ display: 'block', marginBottom: '5px' }}>Mention Text: </label>
+              <label htmlFor="editedMentionName" style={{ display: 'block', marginBottom: '5px' }}>Mentioned Text: </label>
               <input
                 type="text"
                 id="editedMentionName"
@@ -356,7 +356,7 @@ const NodePage = () => {
             </div>
 
             <div style={{ marginBottom: '10px' }}>
-              <label htmlFor="newMentionType" style={{ display: 'block', marginBottom: '5px' }}>New Type: </label>
+              <label htmlFor="newMentionType" style={{ display: 'block', marginBottom: '5px' }}>New Tag: </label>
               <select
                 id="newMentionType"
                 value={newMentionType}
@@ -368,12 +368,12 @@ const NodePage = () => {
                 ))}
               </select>
             </div>
-            <p><em>Original Type: {formatType(editingMention.mention_type)} (Source: {editingMention.source}, Confidence: {editingMention.confidence?.toFixed(2)})</em></p>
+            <p><em>Original Tag: {formatType(editingMention.mention_type)} (Source: {editingMention.source}, Confidence: {editingMention.confidence?.toFixed(2)})</em></p>
 
 
             <div className="modal-actions">
-              <button onClick={handleSaveCorrection} className="button" disabled={!editedMentionName.trim()}>Save Change</button>
-              <button onClick={handleDeleteMentionInModal} className="button button-danger">Delete Mention</button>
+              <button onClick={handleSaveCorrection} className="button" disabled={!editedMentionName.trim()}>Save Changes</button>
+              <button onClick={handleDeleteMentionInModal} className="button button-danger">Remove This Mention</button>
               <button onClick={handleCloseModal} className="button button-secondary">Cancel</button>
             </div>
           </div>

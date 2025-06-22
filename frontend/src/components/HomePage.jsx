@@ -264,12 +264,12 @@ const HomePage = () => {
       {currentTypeName === 'Notes' && (
         <div className="sort-bar">
           <button className="button" onClick={() => setSortByRecent(!sortByRecent)}>
-            Sort by {sortByRecent ? 'Most Recent' : 'Note Number (ID)'}
+            Sort by {sortByRecent ? 'Most Recent First' : 'Creation Order (Oldest First)'}
           </button>
         </div>
       )}
 
-      {submitting && data.length === 0 && <p>Loading {currentTypeName}...</p>}
+      {submitting && data.length === 0 && <p>Loading your {currentTypeName}...</p>}
 
       {currentTypeName === 'Notes' ? (
         <ul className="note-list">
@@ -351,15 +351,15 @@ const HomePage = () => {
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {existingNode ? (
               <>
-                <p>This text is already known as: <strong>{existingNode.name}</strong> (Type: {existingNode.type}, Node ID: {existingNode.id}).</p>
+                <p>This text is already tagged as: <strong>{existingNode.name}</strong> (Type: {existingNode.type}, Node ID: {existingNode.id}).</p>
                 {existingNode.type === 'PERSON' && (
                   <>
-                    <button onClick={() => tagWithPersonTag('Player Character')}>👤 Tag this occurrence as Person & (future: add PC tag)</button>
-                    <button onClick={() => tagWithPersonTag('Party Member')}>👤 Tag this occurrence as Person & (future: add Party tag)</button>
+                    <button onClick={() => tagWithPersonTag('Player Character')}>👤 Tag this instance as a Person</button>
+                    <button onClick={() => tagWithPersonTag('Party Member')}>👤 Tag this instance as a Person</button>
                   </>
                 )}
                 <div className="retag-section">
-                  <p>Or, re-tag this specific instance of "<em>{selection.text}</em>" as:</p>
+                  <p>Or, change the tag for this specific instance of "<em>{selection.text}</em>" as:</p>
                   <select
                     value={newTypeForExistingText}
                     onChange={(e) => setNewTypeForExistingText(e.target.value)}
@@ -375,21 +375,21 @@ const HomePage = () => {
                     className="button"
                     title={newTypeForExistingText === existingNode.type ? "Select a different type to re-tag this specific mention." : ""}
                   >
-                    Save as New Type for This Mention Only
+                    Save New Tag for This Mention
                   </button>
                 </div>
               </>
             ) : (
               <>
-                <p>Tag "<em>{selection.text}</em>" for the first time as:</p>
-                <button onClick={() => tagSelectionManually('PERSON')}>👤 Tag as Person</button>
-                <button onClick={() => tagSelectionManually('LOCATION')}>🏠 Tag as Location</button>
-                <button onClick={() => tagSelectionManually('ITEM')}>📜 Tag as Item</button>
-                <button onClick={() => tagSelectionManually('SPELL')}>🪄 Tag as Spell</button>
-                <button onClick={() => tagSelectionManually('MONSTER')}>💀 Tag as Monster</button>
+                <p>Tag "<em>{selection.text}</em>" as:</p>
+                <button onClick={() => tagSelectionManually('PERSON')}>👤 Tag as a Person</button>
+                <button onClick={() => tagSelectionManually('LOCATION')}>🏠 Tag as a Location</button>
+                <button onClick={() => tagSelectionManually('ITEM')}>📜 Tag as an Item</button>
+                <button onClick={() => tagSelectionManually('SPELL')}>🪄 Tag as a Spell</button>
+                <button onClick={() => tagSelectionManually('MONSTER')}>💀 Tag as a Monster</button>
               </>
             )}
-            <button onClick={() => setShowFabOptions(false)} className="button button-secondary" style={{marginTop: '1rem'}}>Cancel All</button>
+            <button onClick={() => setShowFabOptions(false)} className="button button-secondary" style={{marginTop: '1rem'}}>Cancel Tagging</button>
           </div>
         </div>
       )}
@@ -399,27 +399,27 @@ const HomePage = () => {
           <div style={{ margin: '0 auto' }}>
             <h3 className="form-page-container-subheader">New Note</h3>
             <div className="form-group" style={{ marginBottom: '10px' }}>
-              <label htmlFor="newNoteTitle" style={{ display: 'block', marginBottom: '5px' }}>Title (Optional):</label>
+              <label htmlFor="newNoteTitle" style={{ display: 'block', marginBottom: '5px' }}>Note Title (Optional):</label>
               <input
                 type="text"
                 id="newNoteTitle"
-                placeholder="Enter note title"
+                placeholder="Enter a title for your note (optional)"
                 value={newNoteTitle}
                 onChange={(e) => setNewNoteTitle(e.target.value)}
               />
             </div>
             <div className="form-group">
-              <label htmlFor="newNoteContent" style={{ display: 'block', marginBottom: '5px' }}>Content:</label>
+              <label htmlFor="newNoteContent" style={{ display: 'block', marginBottom: '5px' }}>Note Content:</label>
               <textarea
                 id="newNoteContent"
                 value={newNoteContent}
                 onChange={(e) => setNewNoteContent(e.target.value)}
                 rows={5}
-                placeholder="Enter your campaign note here..."
+                placeholder="Write your campaign note here..."
               />
               <div className="button-row">
                 <button onClick={submitNewNote} disabled={submitting || !newNoteContent.trim()} className="button">
-                  {submitting ? 'Saving...' : 'Save Note'}
+                  {submitting ? 'Saving...' : 'Save This Note'}
                 </button>
                 <button onClick={() => setShowNewNoteForm(false)} className="button button-secondary">Cancel</button>
               </div>
