@@ -275,46 +275,79 @@ module.exports = (pool) => {
     if (isNaN(nodeId)) return res.status(400).json({ error: 'Invalid node ID' });
   
     try {
-      const { rows } = await pool.query(`
-        SELECT m.*, n.content AS note_content
-        FROM "Note"."note_mentions" m
-        JOIN "Note"."notes" n ON m.note_id = n.id
-        WHERE m.node_id = $1
-        ORDER BY m.note_id DESC
-      `, [nodeId]);
+      const query = `
+        WITH RankedMentions AS (
+            SELECT
+                m.id AS mention_id,
+                m.note_id,
+                n.content AS note_content,
+                n.title AS note_title,
+                m.node_id AS mentioned_node_id,
+                m.mention_type,
+                m.source,
+                m.confidence,
+                m.start_pos,
+                m.end_pos,
+                n.created_at AS note_created_at, -- Added for ordering
+                -- Rank mentions of the specific node within each note to pick a representative one
+                ROW_NUMBER() OVER (PARTITION BY m.note_id ORDER BY m.id ASC) as rn_in_note
+            FROM "Note"."note_mentions" m
+            JOIN "Note"."notes" n ON m.note_id = n.id
+            WHERE m.node_id = $1 -- $1 is the nodeId for the NodePage
+        ),
+        NoteMentionCounts AS (
+            SELECT
+                note_id,
+                COUNT(*) AS mention_count
+            FROM RankedMentions -- Counts all mentions of this node in the note
+            GROUP BY note_id
+        )
+        SELECT
+            rm.note_id,
+            rm.note_content,
+            rm.note_title,
+            rm.mention_id AS representative_mention_id,
+            rm.mention_type AS representative_mention_type,
+            rm.source AS representative_source,
+            rm.confidence AS representative_confidence,
+            rm.start_pos AS representative_start_pos,
+            rm.end_pos AS representative_end_pos,
+            rm.note_created_at, -- Pass through for ordering
+            nmc.mention_count
+        FROM RankedMentions rm
+        JOIN NoteMentionCounts nmc ON rm.note_id = nmc.note_id
+        WHERE rm.rn_in_note = 1 -- Selects only the first/representative mention per note
+        ORDER BY rm.note_created_at DESC, rm.note_id DESC; -- Order notes by creation date
+      `;
+      const { rows } = await pool.query(query, [nodeId]);
   
-      // Add a `snippet` field for each mention with context
-      const mentionsWithContextualSnippets = rows.map(m => {
-        const content = m.note_content || ''; // Ensure content is a string
-        const start = m.start_pos;
-        const end = m.end_pos;
+      const resultsWithSnippets = rows.map(row => {
+        const content = row.note_content || '';
+        const start = row.representative_start_pos; // Use representative start/end
+        const end = row.representative_end_pos;
         let snippet = '';
-        const CONTEXT_CHARS = 50; // Number of characters before and after
+        const CONTEXT_CHARS = 50;
 
         if (typeof start === 'number' && typeof end === 'number' && start >= 0 && end >= start && end <= content.length) {
             const snippetStart = Math.max(0, start - CONTEXT_CHARS);
             const snippetEnd = Math.min(content.length, end + CONTEXT_CHARS);
-
             snippet = content.substring(snippetStart, snippetEnd);
-
-            if (snippetStart > 0) { // Check if text was truncated at the beginning
-                snippet = "... " + snippet;
-            }
-            if (snippetEnd < content.length) { // Check if text was truncated at the end
-                snippet = snippet + " ...";
-            }
+            if (snippetStart > 0) snippet = "... " + snippet;
+            if (snippetEnd < content.length) snippet = snippet + " ...";
         } else {
-            // Fallback if start/end positions are invalid
             snippet = content.substring(0, 100) + (content.length > 100 ? "..." : "");
         }
   
         return {
-          ...m,
-          snippet // This is the new, richer snippet
+          // Keep all fields from the row, which are now structured per note
+          // and include representative mention details and count
+          ...row,
+          id: row.representative_mention_id, // For keying and actions, use the ID of the representative mention
+          snippet
         };
       });
   
-      res.json(mentionsWithContextualSnippets);
+      res.json(resultsWithSnippets);
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: 'Failed to fetch mentions', message: err.message });

@@ -293,48 +293,67 @@ const NodePage = () => {
 
           <h3>Where This Appears in Your Notes</h3>
           <ul style={{ listStyle: 'none', padding: 0 }}>
-            {mentions.map((m) => (
-              <li key={m.id} className="mention-entry" style={getMentionStyle(m)}>
+            {mentions.map((mentionGroup) => (
+              // Use note_id as key for the list item representing the note
+              <li key={mentionGroup.note_id} className="mention-entry" style={getMentionStyle(mentionGroup)}>
                 <div className="entity-meta">
                   <span>
-                    In Note <Link to={`/#note-${m.note_id}`}>#{m.note_id}</Link>:
-                    Tagged as: {formatType(m.mention_type)} ({formatMentionSource(m.source, m.confidence)})
+                    In Note <Link to={`/#note-${mentionGroup.note_id}`}>#{mentionGroup.note_id}</Link>
+                    {mentionGroup.note_title && ` ("${mentionGroup.note_title}")`}:
+                    Tagged as: {formatType(mentionGroup.representative_mention_type)} ({formatMentionSource(mentionGroup.representative_source, mentionGroup.representative_confidence)})
+                    {mentionGroup.mention_count > 1 && <em style={{marginLeft: '10px'}}>({mentionGroup.mention_count} mentions in this note)</em>}
                   </span>
                   <div className="mention-actions">
-                    {!['USER_CONFIRMED', 'USER_ADDED', 'PHRASEMATCHER_EXACT', 'USER_MODIFIED'].includes(m.source) && (
+                    {/* Actions now target the representative_mention_id */}
+                    {!['USER_CONFIRMED', 'USER_ADDED', 'PHRASEMATCHER_EXACT', 'USER_MODIFIED'].includes(mentionGroup.representative_source) && (
                       <button
-                        onClick={() => handleQuickConfirm(m.id)}
+                        onClick={() => handleQuickConfirm(mentionGroup.representative_mention_id)}
                         className="button-icon button-quick-confirm"
-                        title="Confirm This Tag"
+                        title="Confirm This Tag (Representative)"
                       > ✔️ </button>
                     )}
                     <button
-                      onClick={() => handleOpenEditModal(m)}
+                      // Pass the whole group, modal might need to adapt or use representative parts
+                      onClick={() => handleOpenEditModal({
+                        id: mentionGroup.representative_mention_id,
+                        note_id: mentionGroup.note_id,
+                        snippet: mentionGroup.snippet, // Snippet of representative mention
+                        mention_type: mentionGroup.representative_mention_type,
+                        source: mentionGroup.representative_source,
+                        confidence: mentionGroup.representative_confidence,
+                        // For editing name, we might need the node's actual current name,
+                        // but the modal currently edits the 'snippet' (mention text segment).
+                        // This part might need more thought if 'editedMentionName' in modal is for node name vs segment.
+                        // For now, assuming modal edits based on the representative mention's details.
+                        node_name: node ? node.name : '', // Pass current node's name for context if needed
+                        start_pos: mentionGroup.representative_start_pos, // Pass representative pos
+                        end_pos: mentionGroup.representative_end_pos
+                       })}
                       className="button-icon"
-                      title="Edit This Tag or Mention"
+                      title="Edit This Tag (Representative)"
                     > ✏️ </button>
                     <button
-                      onClick={() => navigate(`/notes/${m.note_id}/edit`)}
+                      onClick={() => navigate(`/notes/${mentionGroup.note_id}/edit`)}
                       className="button-icon"
-                      title="Edit Full Note"
+                      title="Edit Full Note Content"
                     > 📝 </button>
                     <button
-                      onClick={() => toggleNote(m.note_id)}
+                      onClick={() => toggleNote(mentionGroup.note_id)}
                       className="button-icon"
-                      title={expandedNotes.includes(m.note_id) ? 'Collapse Note Details' : 'Expand Note Details'}
+                      title={expandedNotes.includes(mentionGroup.note_id) ? 'Collapse Note Details' : 'Expand Note Details'}
                     >
-                      {expandedNotes.includes(m.note_id) ? '➖' : '➕'}
+                      {expandedNotes.includes(mentionGroup.note_id) ? '➖' : '➕'}
                     </button>
                   </div>
                 </div>
                 <div
-                  className={`mention-snippet ${expandedNotes.includes(m.note_id) ? 'expanded' : ''}`}
+                  className={`mention-snippet ${expandedNotes.includes(mentionGroup.note_id) ? 'expanded' : ''}`}
                   style={{ clear: 'both', paddingTop: '5px' }}
                 >
                   <em>
-                    {expandedNotes.includes(m.note_id)
-                      ? m.note_content  // Show full content when expanded
-                      : m.snippet || 'Snippet not available.'} {/* Use backend-generated snippet when collapsed */}
+                    {expandedNotes.includes(mentionGroup.note_id)
+                      ? mentionGroup.note_content  // Show full content when expanded
+                      : mentionGroup.snippet || 'Snippet not available.'} {/* Snippet of representative mention */}
                   </em>
                 </div>
               </li>
