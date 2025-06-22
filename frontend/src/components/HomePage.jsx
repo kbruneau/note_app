@@ -28,7 +28,10 @@ const HomePage = () => {
   const [selectedNoteId, setSelectedNoteId] = useState(null);
   const [showFabOptions, setShowFabOptions] = useState(false);
   const [existingNode, setExistingNode] = useState(null);
-  const [newTypeForExistingText, setNewTypeForExistingText] = useState(''); // New state
+  // const [newTypeForExistingText, setNewTypeForExistingText] = useState(''); // Replaced by fabSelectedTag
+  const [fabSelectedTag, setFabSelectedTag] = useState(''); // For the new FAB dropdown
+  const [isPlayerCharacter, setIsPlayerCharacter] = useState(false); // For "Player Character" checkbox
+  const [isPartyMember, setIsPartyMember] = useState(false); // For "Party Member" checkbox
 
   const [highlightNoteId, setHighlightNoteId] = useState(null);
 
@@ -110,67 +113,88 @@ const HomePage = () => {
 
     setSelection({ text, start, end });
     setSelectedNoteId(noteId);
+
+    // Initialize new FAB state variables
+    setFabSelectedTag('');
+    setIsPlayerCharacter(false);
+    setIsPartyMember(false);
     setShowFabOptions(true);
-    setNewTypeForExistingText(''); // Reset dropdown
 
     try {
       const res = await apiClient.get(`/nodes/by-name/${encodeURIComponent(text)}`);
-      setExistingNode(res.data || null);
+      const nodeData = res.data || null;
+      setExistingNode(nodeData);
+      if (nodeData) {
+        setFabSelectedTag(nodeData.type); // Initialize with existing node's type
+      }
     } catch {
       setExistingNode(null);
+      // fabSelectedTag remains '' or its default if no existing node
     }
   };
 
-  const tagSelectionManually = async (type) => {
-    if (!selection.text || selectedNoteId == null || currentTypeName !== 'Notes') return;
-    try {
-      await apiClient.post(`/notes/${selectedNoteId}/mentions/add`, {
-        name_segment: selection.text,
-        type: type,
-        start_pos: selection.start,
-        end_pos: selection.end
-      });
-      setSelection({ text: '', start: null, end: null });
-      setSelectedNoteId(null);
-      setShowFabOptions(false);
-      await apiClient.post('/retag-entity-everywhere', { name: selection.text, type: type });
-    } catch (err) {
-      console.error('Failed to manually tag:', err);
-      alert('Error tagging word. Check console. ' + (err.response?.data?.error || err.message));
-    }
-  };
+  // // Old tagSelectionManually - logic moved to handleSaveFabChanges
+  // const tagSelectionManually = async (type) => { ... };
 
-  const handleRetagExistingTextAsNewType = async () => {
-    if (!selection.text || selectedNoteId == null || !newTypeForExistingText || currentTypeName !== 'Notes') {
-      alert("Please select a new type for the re-tag action.");
+  // // Old handleRetagExistingTextAsNewType - logic moved to handleSaveFabChanges
+  // const handleRetagExistingTextAsNewType = async () => { ... };
+
+  const handleSaveFabChanges = async () => {
+    if (!selection.text || selectedNoteId == null || !fabSelectedTag || currentTypeName !== 'Notes') {
+      alert("Please select a tag type.");
       return;
     }
     try {
+      // Add the mention to the specific note
       await apiClient.post(`/notes/${selectedNoteId}/mentions/add`, {
         name_segment: selection.text,
-        type: newTypeForExistingText,
+        type: fabSelectedTag, // Use the new state for selected tag
         start_pos: selection.start,
         end_pos: selection.end
+        // PlayerCharacter/PartyMember info not sent to backend for now as per plan (Option A)
       });
 
-      await apiClient.post('/retag-entity-everywhere', { name: selection.text, type: newTypeForExistingText });
+      // Retag this entity everywhere with the selected type
+      // This ensures consistency if this entity name was previously tagged differently elsewhere
+      // or if it's a new entity, it establishes its type.
+      await apiClient.post('/retag-entity-everywhere', { name: selection.text, type: fabSelectedTag });
 
+      // Reset FAB related state and hide FAB
       setSelection({ text: '', start: null, end: null });
       setSelectedNoteId(null);
+      setFabSelectedTag('');
+      setIsPlayerCharacter(false);
+      setIsPartyMember(false);
+      setExistingNode(null); // Clear existing node info
       setShowFabOptions(false);
-      setNewTypeForExistingText('');
+
+      // Optionally, could add a function here to re-fetch notes or update UI if needed,
+      // but /retag-entity-everywhere should handle backend consistency.
+      // For now, a page refresh or re-navigating might show changes, or rely on existing data fetching.
+
     } catch (err) {
-      console.error('Failed to re-tag existing text:', err);
-      alert('Error re-tagging. Check console. ' + (err.response?.data?.error || err.message));
+      console.error('Failed to save FAB changes:', err);
+      alert('Error saving tag. Check console. ' + (err.response?.data?.error || err.message));
     }
   };
 
-  const tagWithPersonTag = async (tagLabel) => {
-    // This is now effectively the same as tagSelectionManually('PERSON')
-    // The specific tagLabel (e.g. "Player Character") is not directly used to add a tag to DM.nodes here.
-    // That would require a separate mechanism or endpoint.
-    await tagSelectionManually('PERSON');
+  const handleCancelFab = () => {
+    setShowFabOptions(false);
+    // Reset all FAB specific states
+    setSelection({ text: '', start: null, end: null });
+    setSelectedNoteId(null);
+    setFabSelectedTag('');
+    setIsPlayerCharacter(false);
+    setIsPartyMember(false);
+    setExistingNode(null); // Clear existing node info as well
   };
+
+  // const tagWithPersonTag = async (tagLabel) => { // No longer needed with new FAB
+  //   // This is now effectively the same as tagSelectionManually('PERSON')
+  //   // The specific tagLabel (e.g. "Player Character") is not directly used to add a tag to DM.nodes here.
+  //   // That would require a separate mechanism or endpoint.
+  //   // await tagSelectionManually('PERSON'); // Old call
+  // };
 
   const startEdit = (note) => {
     setEditNoteId(note.id);
@@ -347,49 +371,63 @@ const HomePage = () => {
 
       {currentTypeName === 'Notes' && showFabOptions && (
         <div className="popup-box">
-          <p style={{ marginBottom: '0.5rem' }}>Tag "<em>{selection.text}</em>" as:</p>
+          <p style={{ marginBottom: '0.5rem' }}>Tag "<em>{selection.text}</em>"?</p>
+
+          {existingNode && (
+            <p style={{ fontSize: '0.9em', margin: '0.5rem 0' }}>
+              This text is already tagged as: <strong>{existingNode.name}</strong> (Type: {existingNode.type}, Node ID: {existingNode.id}). You can change the tag or details below.
+            </p>
+          )}
+          {!existingNode && (
+            <p style={{ fontSize: '0.9em', margin: '0.5rem 0' }}>
+              Choose how to tag "<em>{selection.text}</em>":
+            </p>
+          )}
+
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-            {existingNode ? (
-              <>
-                <p>This text is already tagged as: <strong>{existingNode.name}</strong> (Type: {existingNode.type}, Node ID: {existingNode.id}).</p>
-                {existingNode.type === 'PERSON' && (
-                  <>
-                    <button onClick={() => tagWithPersonTag('Player Character')}>👤 Tag this instance as a Person</button>
-                    <button onClick={() => tagWithPersonTag('Party Member')}>👤 Tag this instance as a Person</button>
-                  </>
-                )}
-                <div className="retag-section">
-                  <p>Or, change the tag for this specific instance of "<em>{selection.text}</em>" as:</p>
-                  <select
-                    value={newTypeForExistingText}
-                    onChange={(e) => setNewTypeForExistingText(e.target.value)}
-                  >
-                    <option value="">-- Select New Type --</option>
-                    {entityTypesForTagging.map(type => (
-                      <option key={type} value={type}>{type.charAt(0) + type.slice(1).toLowerCase()}</option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={handleRetagExistingTextAsNewType}
-                    disabled={!newTypeForExistingText || newTypeForExistingText === existingNode.type}
-                    className="button"
-                    title={newTypeForExistingText === existingNode.type ? "Select a different type to re-tag this specific mention." : ""}
-                  >
-                    Save New Tag for This Mention
-                  </button>
+            <div>
+              <label htmlFor="fabSelectedTag" style={{ display: 'block', marginBottom: '2px' }}>Tag as:</label>
+              <select
+                id="fabSelectedTag"
+                value={fabSelectedTag}
+                onChange={(e) => setFabSelectedTag(e.target.value)}
+                style={{ width: '100%', padding: '8px' }}
+              >
+                <option value="">-- Select Tag --</option>
+                {entityTypesForTagging.map(type => (
+                  <option key={type} value={type}>{type.charAt(0) + type.slice(1).toLowerCase()}</option>
+                ))}
+              </select>
+            </div>
+
+            {fabSelectedTag === 'PERSON' && (
+              <div style={{ marginTop: '0.5rem', paddingLeft: '1rem', borderLeft: '2px solid #eee' }}>
+                <label style={{ display: 'block', marginBottom: '5px' }}>Person Details:</label>
+                <div>
+                  <input
+                    type="checkbox"
+                    id="isPlayerCharacter"
+                    checked={isPlayerCharacter}
+                    onChange={(e) => setIsPlayerCharacter(e.target.checked)}
+                  />
+                  <label htmlFor="isPlayerCharacter" style={{ marginLeft: '5px' }}>Player Character?</label>
                 </div>
-              </>
-            ) : (
-              <>
-                <p>Tag "<em>{selection.text}</em>" as:</p>
-                <button onClick={() => tagSelectionManually('PERSON')}>👤 Tag as a Person</button>
-                <button onClick={() => tagSelectionManually('LOCATION')}>🏠 Tag as a Location</button>
-                <button onClick={() => tagSelectionManually('ITEM')}>📜 Tag as an Item</button>
-                <button onClick={() => tagSelectionManually('SPELL')}>🪄 Tag as a Spell</button>
-                <button onClick={() => tagSelectionManually('MONSTER')}>💀 Tag as a Monster</button>
-              </>
+                <div>
+                  <input
+                    type="checkbox"
+                    id="isPartyMember"
+                    checked={isPartyMember}
+                    onChange={(e) => setIsPartyMember(e.target.checked)}
+                  />
+                  <label htmlFor="isPartyMember" style={{ marginLeft: '5px' }}>Party Member?</label>
+                </div>
+              </div>
             )}
-            <button onClick={() => setShowFabOptions(false)} className="button button-secondary" style={{marginTop: '1rem'}}>Cancel Tagging</button>
+
+            <div className="button-row" style={{ marginTop: '1rem' }}>
+              <button onClick={handleSaveFabChanges} className="button" disabled={!fabSelectedTag}>Save Changes</button>
+              <button onClick={handleCancelFab} className="button button-secondary">Cancel</button>
+            </div>
           </div>
         </div>
       )}
