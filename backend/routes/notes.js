@@ -278,28 +278,31 @@ module.exports = (pool) => {
   
     try {
       await client.query('BEGIN');
-      // Check if the node already exists
+      // Check if the node already exists for this user
+      // Assumes "Note"."nodes" has user_id column
       const existing = await client.query(`
-        SELECT id FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2
-      `, [name, type]);
+        SELECT id FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2 AND user_id = $3
+      `, [name, type, userId]);
   
-      let nodeId; // Renamed to avoid conflict with the note_id from req.body
+      let nodeId;
       if (existing.rows.length > 0) {
         nodeId = existing.rows[0].id;
       } else {
+        // Assumes "Note"."nodes" has user_id column
         const insert = await client.query(`
-          INSERT INTO "Note"."nodes" (name, type) VALUES ($1, $2) RETURNING id
-        `, [name, type]);
+          INSERT INTO "Note"."nodes" (name, type, user_id) VALUES ($1, $2, $3) RETURNING id
+        `, [name, type, userId]);
         nodeId = insert.rows[0].id;
       }
   
-      // Append tag only if it's a PERSON and not already tagged
+      // Append tag only if it's a PERSON and not already tagged, and user owns the node
+      // Assumes "Note"."nodes" has user_id column
       if (tag && type === 'PERSON') {
         await client.query(`
           UPDATE "Note"."nodes"
           SET tags = array_append(tags, $1)
-          WHERE id = $2 AND NOT ($1 = ANY(tags))
-        `, [tag, nodeId]);
+          WHERE id = $2 AND user_id = $3 AND NOT ($1 = ANY(tags))
+        `, [tag, nodeId, userId]);
       }
   
       // Create note mention
@@ -354,18 +357,22 @@ module.exports = (pool) => {
       const name_to_use = new_name_segment || original_text_segment;
       let final_node_id;
 
-      // Step 1: Check if the target node (corrected name and type) exists or create it
+      // Step 1: Check if the target node (corrected name and type) exists for this user, or create it for this user
+      // Assumes "Note"."nodes" has user_id column
       const existingNodeRes = await client.query(
-        `SELECT id FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2`,
-        [name_to_use, new_type]
+        `SELECT id FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2 AND user_id = $3`,
+        [name_to_use, new_type, userId]
       );
 
       if (existingNodeRes.rows.length > 0) {
         final_node_id = existingNodeRes.rows[0].id;
+        // Potentially update flags if it's a PERSON node, though this endpoint is primarily for mention correction.
+        // For simplicity, assuming node flags are managed elsewhere or by the add-mention logic if this creates a new effective mention.
       } else {
+        // Assumes "Note"."nodes" has user_id column
         const newNodeRes = await client.query(
-          `INSERT INTO "Note"."nodes" (name, type) VALUES ($1, $2) RETURNING id`,
-          [name_to_use, new_type]
+          `INSERT INTO "Note"."nodes" (name, type, user_id) VALUES ($1, $2, $3) RETURNING id`,
+          [name_to_use, new_type, userId]
         );
         final_node_id = newNodeRes.rows[0].id;
       }
@@ -476,37 +483,43 @@ module.exports = (pool) => {
 
       let final_node_id;
 
-      // Step 1: Find or create node in Note.nodes
+      // Step 1: Find or create node in Note.nodes for the current user
+      // Assumes "Note"."nodes" has user_id column
       const existingNodeRes = await client.query(
-        `SELECT id FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2`,
-        [name_segment, type]
+        `SELECT id, is_player_character, is_party_member FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2 AND user_id = $3`,
+        [name_segment, type, userId]
       );
 
       if (existingNodeRes.rows.length > 0) {
         final_node_id = existingNodeRes.rows[0].id;
-        // If node exists and is PERSON, potentially update its flags?
-        // For now, this endpoint primarily adds a mention. Node updates are better via node-specific endpoints.
-        // However, if this is the *first* time it's tagged as PC/PM, it should happen here.
-        // This needs careful thought: if a node 'PERSON' 'Kyle' exists, and this mention add says he's a PC,
-        // should it update the central Note.nodes.is_player_character? Yes.
+        const existingNode = existingNodeRes.rows[0];
+        // If node exists and is PERSON, update its flags if new values are provided and different
+        // This ensures that adding a mention can also correctly flag a character
         if (type === 'PERSON') {
-          await client.query(
-            `UPDATE "Note"."nodes" SET
-              is_player_character = COALESCE($1, is_player_character, false),
-              is_party_member = COALESCE($2, is_party_member, false),
-              updated_at = CURRENT_TIMESTAMP
-             WHERE id = $3`,
-            [isPlayerCharacter, isPartyMember, final_node_id]
-          );
+          const newIsPC = isPlayerCharacter !== undefined ? !!isPlayerCharacter : existingNode.is_player_character;
+          const newIsPM = isPartyMember !== undefined ? !!isPartyMember : existingNode.is_party_member;
+
+          if (newIsPC !== existingNode.is_player_character || newIsPM !== existingNode.is_party_member) {
+            await client.query(
+              `UPDATE "Note"."nodes" SET
+                is_player_character = $1,
+                is_party_member = $2,
+                updated_at = CURRENT_TIMESTAMP
+               WHERE id = $3 AND user_id = $4`, // Ensure user owns the node being updated
+              [newIsPC, newIsPM, final_node_id, userId]
+            );
+          }
         }
       } else {
-        // Node does not exist, create it
-        let insertQuery = `INSERT INTO "Note"."nodes" (name, type, is_player_character, is_party_member) VALUES ($1, $2, $3, $4) RETURNING id`;
+        // Node does not exist for this user, create it
+        // Assumes "Note"."nodes" has user_id column
+        let insertQuery = `INSERT INTO "Note"."nodes" (name, type, user_id, is_player_character, is_party_member) VALUES ($1, $2, $3, $4, $5) RETURNING id`;
         let queryParams = [
           name_segment,
           type,
-          type === 'PERSON' ? !!isPlayerCharacter : false, // SQL boolean false
-          type === 'PERSON' ? !!isPartyMember : false    // SQL boolean false
+          userId,
+          type === 'PERSON' ? !!isPlayerCharacter : false,
+          type === 'PERSON' ? !!isPartyMember : false
         ];
         const newNodeRes = await client.query(insertQuery, queryParams);
         final_node_id = newNodeRes.rows[0].id;

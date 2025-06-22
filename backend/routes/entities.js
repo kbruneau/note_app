@@ -1,18 +1,27 @@
 const express = require('express');
 
+const authenticateToken = require('../utils/authenticateToken'); // Added for user ID
+
 module.exports = (pool) => {
   const router = express.Router();
 
   // GET all entities grouped and deduplicated by name for a given type
-  router.get('/entities/by-type/:type', async (req, res) => {
+  router.get('/entities/by-type/:type', authenticateToken, async (req, res) => { // Added authenticateToken
     const type = req.params.type;
+    const userId = req.user.userId; // Get userId
+
+    if (!userId) {
+      return res.status(403).json({ error: 'User ID not found in token.' });
+    }
+
     try {
+      // This query assumes "Note"."nodes" table has a user_id column.
       const { rows } = await pool.query(`
         SELECT id, name, type, sub_type, source, created_at, array_to_json(tags) AS tags, is_player_character, is_party_member
         FROM "Note"."nodes"
-        WHERE type = $1
+        WHERE type = $1 AND user_id = $2
         ORDER BY name
-      `, [type]);
+      `, [type, userId]);
       res.json(rows);
     } catch (err) {
       console.error('Error fetching entities by type:', err);
@@ -21,9 +30,17 @@ module.exports = (pool) => {
   });
 
   // GET detailed player character information, including last known location
-  router.get('/entities/player-characters-detailed', async (req, res) => {
+  router.get('/entities/player-characters-detailed', authenticateToken, async (req, res) => { // Added authenticateToken
+    const userId = req.user.userId; // Get userId
+
+    if (!userId) {
+      return res.status(403).json({ error: 'User ID not found in token.' });
+    }
+
     const client = await pool.connect();
     try {
+      // This query assumes "Note"."nodes" (aliased as pc_node and pc_main) has a user_id column.
+      // It also filters notes "n" by user_id.
       const query = `
         WITH PCMentionsInNotes AS (
             SELECT
@@ -34,6 +51,8 @@ module.exports = (pool) => {
             JOIN "Note"."note_mentions" pc_mention ON pc_node.id = pc_mention.node_id
             JOIN "Note"."notes" n ON pc_mention.note_id = n.id
             WHERE pc_node.is_player_character = TRUE
+              AND pc_node.user_id = $1 -- Filter PCs by user
+              AND n.user_id = $1       -- Filter notes by user
         ),
         RankedPCNotes AS (
             SELECT
@@ -73,9 +92,10 @@ module.exports = (pool) => {
             SELECT * FROM LatestPCNoteLocationMentions WHERE loc_rn = 1
         ) lpl ON pc_main.id = lpl.pc_id
         WHERE pc_main.is_player_character = TRUE
+          AND pc_main.user_id = $1 -- Filter main selection of PCs by user
         ORDER BY pc_main.name;
       `;
-      const { rows } = await client.query(query);
+      const { rows } = await client.query(query, [userId]); // Added userId as parameter
       res.json(rows);
     } catch (err) {
       console.error('Error fetching detailed player characters:', err);
@@ -88,36 +108,41 @@ module.exports = (pool) => {
   });
 
   // Re-tag the same entity everywhere it occurs
-  router.post('/retag-entity-everywhere', async (req, res) => {
+  router.post('/retag-entity-everywhere', authenticateToken, async (req, res) => { // Added authenticateToken
     const { name, type } = req.body;
+    const userId = req.user.userId; // Get userId
+
     if (!name || !type) {
       return res.status(400).json({ error: 'Missing name or type' });
+    }
+    if (!userId) {
+      return res.status(403).json({ error: 'User ID not found in token.' });
     }
 
     const client = await pool.connect(); // Acquire client
     try {
       await client.query('BEGIN'); // Start transaction
 
-      // Step 1: Retrieve node ID
+      // Step 1: Retrieve node ID (must belong to the user)
+      // Assumes "Note"."nodes" has a user_id column.
       const { rows: nodeRows } = await client.query(
-        `SELECT id FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2 LIMIT 1 FOR UPDATE`, // Added FOR UPDATE
-        [name, type]
+        `SELECT id FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2 AND user_id = $3 LIMIT 1 FOR UPDATE`,
+        [name, type, userId]
       );
       if (nodeRows.length === 0) {
-        await client.query('ROLLBACK'); // Node not found, rollback
-        // client.release(); // Removed: will be handled by finally
-        return res.status(404).json({ error: 'Node not found' });
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'Node not found or not owned by user.' });
       }
       const nodeId = nodeRows[0].id;
 
-      // Step 2: Get all relevant notes using Full-Text Search
+      // Step 2: Get all relevant notes belonging to the user using Full-Text Search
+      // "Note"."notes" table has user_id.
       const { rows: notes } = await client.query(
-        `SELECT id, content FROM "Note"."notes" WHERE content_tsv @@ websearch_to_tsquery('english', $1)`,
-        [name] // 'name' is the search term for FTS
+        `SELECT id, content FROM "Note"."notes" WHERE content_tsv @@ websearch_to_tsquery('english', $1) AND user_id = $2`,
+        [name, userId]
       );
       if (notes.length === 0) {
-        await client.query('COMMIT'); // No notes to process, commit (or rollback, depending on desired behavior)
-        // client.release(); // Removed: will be handled by finally
+        await client.query('COMMIT');
         return res.json({ success: true, mentionsAdded: 0 });
       }
 
