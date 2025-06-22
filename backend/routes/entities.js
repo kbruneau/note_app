@@ -20,6 +20,69 @@ module.exports = (pool) => {
     }
   });
 
+  // GET detailed player character information, including last known location
+  router.get('/entities/player-characters-detailed', async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const query = `
+        WITH PCMentionsInNotes AS (
+            SELECT
+                pc_node.id AS pc_id,
+                n.id AS note_id,
+                n.created_at AS note_created_at
+            FROM "Note"."nodes" pc_node
+            JOIN "Note"."note_mentions" pc_mention ON pc_node.id = pc_mention.node_id
+            JOIN "Note"."notes" n ON pc_mention.note_id = n.id
+            WHERE pc_node.is_player_character = TRUE
+        ),
+        RankedPCNotes AS (
+            SELECT
+                pc_id,
+                note_id,
+                note_created_at,
+                ROW_NUMBER() OVER (PARTITION BY pc_id ORDER BY note_created_at DESC, note_id DESC) as rn
+            FROM PCMentionsInNotes
+        ),
+        LatestPCNoteLocationMentions AS (
+            SELECT
+                rpn.pc_id,
+                loc_mention.node_id AS location_id,
+                loc_node.name AS location_name,
+                ROW_NUMBER() OVER (PARTITION BY rpn.pc_id ORDER BY loc_mention.id ASC) as loc_rn
+            FROM RankedPCNotes rpn
+            JOIN "Note"."note_mentions" loc_mention ON rpn.note_id = loc_mention.note_id
+            JOIN "Note"."nodes" loc_node ON loc_mention.node_id = loc_node.id
+            WHERE rpn.rn = 1 AND loc_node.type = 'LOCATION'
+        )
+        SELECT
+            pc_main.id,
+            pc_main.name,
+            pc_main.type,
+            pc_main.sub_type,
+            pc_main.is_player_character,
+            pc_main.is_party_member,
+            array_to_json(pc_main.tags) AS tags,
+            lpl.location_id,
+            lpl.location_name
+        FROM "Note"."nodes" pc_main
+        LEFT JOIN (
+            SELECT * FROM LatestPCNoteLocationMentions WHERE loc_rn = 1
+        ) lpl ON pc_main.id = lpl.pc_id
+        WHERE pc_main.is_player_character = TRUE
+        ORDER BY pc_main.name;
+      `;
+      const { rows } = await client.query(query);
+      res.json(rows);
+    } catch (err) {
+      console.error('Error fetching detailed player characters:', err);
+      res.status(500).json({ error: 'Failed to fetch detailed player characters', message: err.message });
+    } finally {
+      if (client) {
+        client.release();
+      }
+    }
+  });
+
   // Re-tag the same entity everywhere it occurs
   router.post('/retag-entity-everywhere', async (req, res) => {
     const { name, type } = req.body;

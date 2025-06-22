@@ -24,16 +24,21 @@ const MainLayout = () => {
 
   const fetchCharacters = async () => {
     try {
-      const res = await apiClient.get('/entities/by-type/PERSON');
-      const allPersons = res.data || [];
-      // Filter by new boolean flags
-      const pcs = allPersons.filter(p => p.is_player_character === true);
+      // Fetch detailed player characters
+      const pcRes = await apiClient.get('/entities/player-characters-detailed');
+      const detailedPcs = pcRes.data || [];
+      setPlayerCharacters(detailedPcs);
+
+      // Fetch all persons to then filter for party members (if party members can be non-PCs)
+      // Or, if party members are always a subset of all persons and might also have detailed views later,
+      // this separate fetch might be refined. For now, keeping it simple.
+      const allPersonsRes = await apiClient.get('/entities/by-type/PERSON');
+      const allPersons = allPersonsRes.data || [];
       const party = allPersons.filter(p => p.is_party_member === true);
-      setPlayerCharacters(pcs);
       setPartyMembers(party);
+
     } catch (err) {
       console.error('Failed to fetch PC/Party data for sidebar:', err);
-      // Potentially set them to empty arrays on error
       setPlayerCharacters([]);
       setPartyMembers([]);
     }
@@ -167,12 +172,15 @@ const MainLayout = () => {
                 <Link to={`/node/${pc.id}`} className="entity-link">
                   <h4>{pc.name}</h4>
                 </Link>
-                {/* Filter out the specific 'Player Character' tag before mapping, if other tags exist */}
-                {/* This pc.tags logic is now potentially obsolete if we only rely on boolean flags */}
-                {/* For now, keeping it doesn't hurt, but ideally it would be removed if not used */}
-                {pc.tags && pc.tags.filter(tag => tag !== "Player Character").map(tag =>
+                 {pc.location_name && pc.location_id && (
+                   <div className="pc-last-location">
+                     <small>Last seen: <Link to={`/node/${pc.location_id}`}>{pc.location_name}</Link></small>
+                   </div>
+                 )}
+                 {/* Optional: Display other tags if needed, excluding "Player Character" */}
+                 {/* {pc.tags && pc.tags.filter(tag => tag !== "Player Character").map(tag =>
                   <small key={tag} className="tag pc-general-tag">{tag}</small>
-                )}
+                 )} */}
               </div>
               <button
                 onClick={() => handleRemoveSidebarFlag(pc.id, "is_player_character")}
