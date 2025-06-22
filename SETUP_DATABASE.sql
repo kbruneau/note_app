@@ -907,6 +907,48 @@ END $$;
 COMMENT ON COLUMN "Note"."tagging_corrections"."mention_id" IS 'ID of the mention in Note.note_mentions if this correction pertains to an existing mention. NULL if a new mention was added by user or if original mention was deleted.';
 COMMENT ON COLUMN "Note"."tagging_corrections"."correction_action" IS 'Type of correction: MODIFY_TYPE, MODIFY_SPAN, CONFIRM_TAG, DELETE_TAG, ADD_TAG, etc.';
 
+CREATE TABLE IF NOT EXISTS "Note"."character_sheets" (
+    node_id INTEGER PRIMARY KEY REFERENCES "Note"."nodes"(id) ON DELETE CASCADE,
+    race TEXT,
+    main_class TEXT,
+    level INTEGER DEFAULT 1,
+    background TEXT,
+    alignment TEXT,
+    experience_points INTEGER DEFAULT 0,
+    player_name TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+COMMENT ON TABLE "Note"."character_sheets" IS 'Stores detailed character sheet information linked to a node.';
+COMMENT ON COLUMN "Note"."character_sheets"."node_id" IS 'Link to the character node in Note.nodes.';
+COMMENT ON COLUMN "Note"."character_sheets"."race" IS 'Character race.';
+COMMENT ON COLUMN "Note"."character_sheets"."main_class" IS 'Primary class of the character.';
+COMMENT ON COLUMN "Note"."character_sheets"."level" IS 'Character level.';
+COMMENT ON COLUMN "Note"."character_sheets"."background" IS 'Character background.';
+COMMENT ON COLUMN "Note"."character_sheets"."alignment" IS 'Character alignment.';
+COMMENT ON COLUMN "Note"."character_sheets"."experience_points" IS 'Character experience points.';
+COMMENT ON COLUMN "Note"."character_sheets"."player_name" IS 'Name of the player playing the character.';
+COMMENT ON COLUMN "Note"."character_sheets"."created_at" IS 'Timestamp of when the character sheet was created.';
+COMMENT ON COLUMN "Note"."character_sheets"."updated_at" IS 'Timestamp of when the character sheet was last updated.';
+
+-- Trigger function to automatically update updated_at timestamp
+CREATE OR REPLACE FUNCTION update_modified_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Apply the trigger to Note.character_sheets
+-- Ensure this trigger name is unique or drop existing if re-applying to other tables with same name
+DROP TRIGGER IF EXISTS character_sheets_updated_at_trigger ON "Note"."character_sheets";
+CREATE TRIGGER character_sheets_updated_at_trigger
+BEFORE UPDATE ON "Note"."character_sheets"
+FOR EACH ROW
+EXECUTE FUNCTION update_modified_column();
+
 
 -- Schema: DM
 CREATE TABLE IF NOT EXISTS "DM"."bestiarys" (

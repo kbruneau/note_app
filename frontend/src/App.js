@@ -9,6 +9,7 @@ import NameGenerator from './components/NameGenerator'; // Import NameGenerator
 import RegistrationPage from './components/RegistrationPage'; // Import RegistrationPage
 import LoginPage from './components/LoginPage'; // Import LoginPage
 import PrivateRoute from './components/PrivateRoute'; // Import PrivateRoute
+import CharacterSheetPage from './components/CharacterSheetPage'; // Import CharacterSheetPage
 
 function App() {
   return (
@@ -28,6 +29,7 @@ function App() {
           <Route path="notes/entry" element={<NoteEntry />} />
           <Route path="node/:nodeId" element={<NodePage />} />
           <Route path="notes/:id/edit" element={<EditNotePage />} />
+          <Route path="node/:nodeId/sheet" element={<CharacterSheetPage />} /> {/* New route for character sheet */}
           <Route path="tools/name-generator" element={<NameGenerator />} />
         </Route>
 

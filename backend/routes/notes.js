@@ -1,27 +1,14 @@
 const express = require('express');
-const jwt = require('jsonwebtoken'); // Added for JWT verification
+// const jwt = require('jsonwebtoken'); // No longer needed here directly
+const authenticateToken = require('../utils/authenticateToken'); // Import shared middleware
 // const { spawn } = require('child_process'); // Removed
 // const path = require('path'); // Removed
 const axios = require('axios'); // Added axios
 
-// Middleware to authenticate JWT
-const authenticateToken = (req, res, next) => {
-  const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
-
-  if (token == null) {
-    return res.sendStatus(401); // Unauthorized
-  }
-
-  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
-    if (err) {
-      console.error('JWT verification error:', err);
-      return res.sendStatus(403); // Forbidden
-    }
-    req.user = user; // Add user payload to request object
-    next();
-  });
-};
+// // Middleware to authenticate JWT - MOVED to utils/authenticateToken.js
+// const authenticateToken = (req, res, next) => {
+//   ...
+// };
 
 module.exports = (pool) => {
   const router = express.Router();

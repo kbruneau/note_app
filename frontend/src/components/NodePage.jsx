@@ -281,7 +281,12 @@ const NodePage = () => {
             ) : (
               <>
                 <a href={`/?tab=${node.type}`} className="entity-link">{formatType(node.type)}</a>
-                <button onClick={() => setIsEditingType(true)} className="button">Change</button>
+                <button onClick={() => setIsEditingType(true)} className="button">Change Type</button>
+                {node.is_player_character && (
+                  <Link to={`/node/${nodeId}/sheet`} className="button button-secondary" style={{ marginLeft: '10px' }}>
+                    Character Sheet
+                  </Link>
+                )}
               </>
             )}
           </p>
