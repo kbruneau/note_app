@@ -21,6 +21,7 @@ const noteRoutes = require('./routes/notes')(pool);
 const nodesRoutes = require('./routes/nodes')(pool);
 const entitiesRoutes = require('./routes/entities')(pool);
 const characterSheetsRouter = require('./routes/characterSheets')(pool); // Import new router
+const coreDataRouter = require('./routes/coreData')(pool); // Import coreData router
 const authRoutes = require('./routes/auth'); // exports router
 
 // Register routes
@@ -29,6 +30,7 @@ app.use('/api', noteRoutes);
 app.use('/api', nodesRoutes);
 app.use('/api', entitiesRoutes);
 app.use('/api/nodes', characterSheetsRouter); // Mount for routes like /api/nodes/:nodeId/character-sheet
+app.use('/api/core-data', coreDataRouter); // Mount coreData router
 app.use('/api/auth', authRoutes);
 
 // Health check

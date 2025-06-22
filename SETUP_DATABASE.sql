@@ -908,11 +908,11 @@ COMMENT ON COLUMN "Note"."tagging_corrections"."mention_id" IS 'ID of the mentio
 COMMENT ON COLUMN "Note"."tagging_corrections"."correction_action" IS 'Type of correction: MODIFY_TYPE, MODIFY_SPAN, CONFIRM_TAG, DELETE_TAG, ADD_TAG, etc.';
 
 CREATE TABLE IF NOT EXISTS "Note"."character_sheets" (
-    node_id INTEGER PRIMARY KEY REFERENCES "Note"."nodes"(id) ON DELETE CASCADE,
-    race TEXT,
+    node_id INTEGER PRIMARY KEY, -- FK constraint added below
+    race_id INTEGER,             -- FK constraint added below
     main_class TEXT,
     level INTEGER DEFAULT 1,
-    background TEXT,
+    background_id INTEGER,       -- FK constraint added below
     alignment TEXT,
     experience_points INTEGER DEFAULT 0,
     player_name TEXT,
@@ -920,12 +920,28 @@ CREATE TABLE IF NOT EXISTS "Note"."character_sheets" (
     updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Add FK constraint for node_id separately to ensure it's named if needed later
+ALTER TABLE "Note"."character_sheets" DROP CONSTRAINT IF EXISTS fk_character_sheet_node;
+ALTER TABLE "Note"."character_sheets" ADD CONSTRAINT fk_character_sheet_node
+    FOREIGN KEY (node_id) REFERENCES "Note"."nodes"(id) ON DELETE CASCADE;
+
+-- Add FK constraint for race_id
+ALTER TABLE "Note"."character_sheets" DROP CONSTRAINT IF EXISTS fk_character_sheet_race;
+ALTER TABLE "Note"."character_sheets" ADD CONSTRAINT fk_character_sheet_race
+    FOREIGN KEY (race_id) REFERENCES race.races(id) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- Add FK constraint for background_id
+ALTER TABLE "Note"."character_sheets" DROP CONSTRAINT IF EXISTS fk_character_sheet_background;
+ALTER TABLE "Note"."character_sheets" ADD CONSTRAINT fk_character_sheet_background
+    FOREIGN KEY (background_id) REFERENCES background.backgrounds(id) ON DELETE SET NULL ON UPDATE CASCADE;
+
+
 COMMENT ON TABLE "Note"."character_sheets" IS 'Stores detailed character sheet information linked to a node.';
 COMMENT ON COLUMN "Note"."character_sheets"."node_id" IS 'Link to the character node in Note.nodes.';
-COMMENT ON COLUMN "Note"."character_sheets"."race" IS 'Character race.';
-COMMENT ON COLUMN "Note"."character_sheets"."main_class" IS 'Primary class of the character.';
+COMMENT ON COLUMN "Note"."character_sheets"."race_id" IS 'FK to race.races table.';
+COMMENT ON COLUMN "Note"."character_sheets"."main_class" IS 'Primary class name of the character (e.g., Fighter, Wizard).';
 COMMENT ON COLUMN "Note"."character_sheets"."level" IS 'Character level.';
-COMMENT ON COLUMN "Note"."character_sheets"."background" IS 'Character background.';
+COMMENT ON COLUMN "Note"."character_sheets"."background_id" IS 'FK to background.backgrounds table.';
 COMMENT ON COLUMN "Note"."character_sheets"."alignment" IS 'Character alignment.';
 COMMENT ON COLUMN "Note"."character_sheets"."experience_points" IS 'Character experience points.';
 COMMENT ON COLUMN "Note"."character_sheets"."player_name" IS 'Name of the player playing the character.';

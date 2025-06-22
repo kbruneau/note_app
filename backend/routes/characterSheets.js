@@ -37,14 +37,20 @@ module.exports = (pool) => {
   router.get('/:nodeId/character-sheet', authenticateToken, checkNodeIsPC, async (req, res) => {
     const { nodeId } = req; // nodeId from checkNodeIsPC middleware
     try {
-      const result = await pool.query(
-        'SELECT * FROM "Note"."character_sheets" WHERE node_id = $1',
-        [nodeId]
-      );
+      const query = `
+        SELECT
+          cs.*,
+          r.name AS race_name,
+          b.name AS background_name
+        FROM "Note"."character_sheets" cs
+        LEFT JOIN "race"."races" r ON cs.race_id = r.id
+        LEFT JOIN "background"."backgrounds" b ON cs.background_id = b.id
+        WHERE cs.node_id = $1
+      `;
+      const result = await pool.query(query, [nodeId]);
+
       if (result.rows.length === 0) {
-        // Return 200 with empty object if sheet not found, or 404 - depends on frontend expectation
-        // For now, 200 with empty object might be simpler for frontend to handle "create if not exists"
-        return res.status(200).json({});
+        return res.status(200).json({}); // No sheet found, return empty object
       }
       res.json(result.rows[0]);
     } catch (err) {
@@ -57,10 +63,10 @@ module.exports = (pool) => {
   router.put('/:nodeId/character-sheet', authenticateToken, checkNodeIsPC, async (req, res) => {
     const { nodeId } = req; // nodeId from checkNodeIsPC middleware
     const {
-      race,
-      main_class, // Renamed from mainClass for consistency if desired, or keep as mainClass
+      race_id, // Now expecting race_id
+      main_class,
       level,
-      background,
+      background_id, // Now expecting background_id
       alignment,
       experience_points,
       player_name
@@ -77,30 +83,43 @@ module.exports = (pool) => {
     try {
       const result = await pool.query(
         `INSERT INTO "Note"."character_sheets"
-          (node_id, race, main_class, level, background, alignment, experience_points, player_name)
+          (node_id, race_id, main_class, level, background_id, alignment, experience_points, player_name)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          ON CONFLICT (node_id) DO UPDATE SET
-          race = EXCLUDED.race,
+          race_id = EXCLUDED.race_id,
           main_class = EXCLUDED.main_class,
           level = EXCLUDED.level,
-          background = EXCLUDED.background,
+          background_id = EXCLUDED.background_id,
           alignment = EXCLUDED.alignment,
           experience_points = EXCLUDED.experience_points,
           player_name = EXCLUDED.player_name,
           updated_at = CURRENT_TIMESTAMP
-         RETURNING *`,
+         RETURNING *`, // Consider joining with race/background tables here too to return names
         [
           nodeId,
-          race,
+          race_id, // Use race_id
           main_class,
-          level === undefined ? 1 : level, // Default level if not provided on create
-          background,
+          level === undefined ? 1 : level,
+          background_id, // Use background_id
           alignment,
-          experience_points === undefined ? 0 : experience_points, // Default XP
+          experience_points === undefined ? 0 : experience_points,
           player_name
         ]
       );
-      res.status(200).json(result.rows[0]); // Return 200 for update, could be 201 if always new
+      // For consistency, the PUT response should ideally match the GET response structure.
+      // Fetch the newly updated/inserted record with joins to get names.
+      const savedSheetQuery = `
+        SELECT
+          cs.*,
+          r.name AS race_name,
+          b.name AS background_name
+        FROM "Note"."character_sheets" cs
+        LEFT JOIN "race"."races" r ON cs.race_id = r.id
+        LEFT JOIN "background"."backgrounds" b ON cs.background_id = b.id
+        WHERE cs.node_id = $1
+      `;
+      const savedSheetResult = await pool.query(savedSheetQuery, [nodeId]);
+      res.status(200).json(savedSheetResult.rows[0]);
     } catch (err) {
       console.error(`Error saving character sheet for node ${nodeId}:`, err);
       res.status(500).json({ error: 'Failed to save character sheet', message: err.message });

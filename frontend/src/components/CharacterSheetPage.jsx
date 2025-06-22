@@ -15,11 +15,40 @@ const CharacterSheetPage = () => {
     alignment: '',
     experience_points: 0,
     player_name: '',
+    race_id: '', // Changed from race: ''
+    background_id: '', // Changed from background: ''
   });
   const [nodeName, setNodeName] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [racesList, setRacesList] = useState([]);
+  const [backgroundsList, setBackgroundsList] = useState([]);
+  const [classesList, setClassesList] = useState([]);
+  const [loading, setLoading] = useState(true); // For overall page load
+  const [loadingOptions, setLoadingOptions] = useState(true); // For dropdown options
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+
+  const fetchCoreData = useCallback(async () => {
+    setLoadingOptions(true);
+    try {
+      const [racesRes, backgroundsRes, classesRes] = await Promise.all([
+        apiClient.get('/core-data/races'),
+        apiClient.get('/core-data/backgrounds'),
+        apiClient.get('/core-data/available-classes'),
+      ]);
+      setRacesList(racesRes.data || []);
+      setBackgroundsList(backgroundsRes.data || []);
+      setClassesList(classesRes.data || []); // Expects an array of strings
+    } catch (err) {
+      console.error('Error fetching core data for dropdowns:', err);
+      setError('Failed to load selection options. Please try reloading.');
+      // Keep empty lists on error
+      setRacesList([]);
+      setBackgroundsList([]);
+      setClassesList([]);
+    } finally {
+      setLoadingOptions(false);
+    }
+  }, []);
 
   const fetchCharacterNode = useCallback(async () => {
     try {
@@ -40,20 +69,22 @@ const CharacterSheetPage = () => {
     setLoading(true);
     try {
       const response = await apiClient.get(`/nodes/${nodeId}/character-sheet`);
-      if (response.data && Object.keys(response.data).length > 0) {
-        // Ensure defaults for numbers if API returns null/undefined for them
+      if (response.data && Object.keys(response.data).length > 0 && response.data.node_id) { // Check if node_id exists to confirm valid sheet data
         setSheetData({
-          race: response.data.race || '',
+          race_id: response.data.race_id || '',
           main_class: response.data.main_class || '',
           level: response.data.level === null || response.data.level === undefined ? 1 : Number(response.data.level),
-          background: response.data.background || '',
+          background_id: response.data.background_id || '',
           alignment: response.data.alignment || '',
           experience_points: response.data.experience_points === null || response.data.experience_points === undefined ? 0 : Number(response.data.experience_points),
           player_name: response.data.player_name || '',
         });
       } else {
-        // No sheet data found, keep initial/default state
-        setSheetData(prev => ({...prev})); // Ensures re-render with defaults if needed
+        // No sheet data found, reset to initial state with defaults
+        setSheetData({
+          race_id: '', main_class: '', level: 1, background_id: '',
+          alignment: '', experience_points: 0, player_name: ''
+        });
       }
       setError('');
     } catch (err) {
@@ -65,9 +96,10 @@ const CharacterSheetPage = () => {
   }, [nodeId]);
 
   useEffect(() => {
+    fetchCoreData(); // Fetch dropdown options
     fetchCharacterNode();
     fetchSheetData();
-  }, [nodeId, fetchCharacterNode, fetchSheetData]);
+  }, [nodeId, fetchCoreData, fetchCharacterNode, fetchSheetData]);
 
   const handleChange = (e) => {
     const { name, value, type } = e.target;
@@ -143,31 +175,34 @@ const CharacterSheetPage = () => {
 
         <div className="form-row">
           <div className="form-group">
-            <label htmlFor="race">Race:</label>
-            <input type="text" id="race" name="race" value={sheetData.race} onChange={handleChange} />
+            <label htmlFor="race_id">Race:</label>
+            <select id="race_id" name="race_id" value={sheetData.race_id} onChange={handleChange} disabled={loadingOptions}>
+              <option value="">{loadingOptions ? 'Loading...' : '-- Select Race --'}</option>
+              {racesList.map(race => (
+                <option key={race.id} value={race.id}>{race.name}</option>
+              ))}
+            </select>
           </div>
           <div className="form-group">
-            <label htmlFor="background">Background:</label>
-            <input
-              type="text"
-              id="background"
-              name="background"
-              value={sheetData.background}
-              onChange={handleChange}
-            />
+            <label htmlFor="background_id">Background:</label>
+            <select id="background_id" name="background_id" value={sheetData.background_id} onChange={handleChange} disabled={loadingOptions}>
+              <option value="">{loadingOptions ? 'Loading...' : '-- Select Background --'}</option>
+              {backgroundsList.map(bg => (
+                <option key={bg.id} value={bg.id}>{bg.name}</option>
+              ))}
+            </select>
           </div>
         </div>
 
         <div className="form-row">
           <div className="form-group">
             <label htmlFor="main_class">Class:</label>
-            <input
-              type="text"
-              id="main_class"
-              name="main_class"
-              value={sheetData.main_class}
-              onChange={handleChange}
-            />
+            <select id="main_class" name="main_class" value={sheetData.main_class} onChange={handleChange} disabled={loadingOptions}>
+              <option value="">{loadingOptions ? 'Loading...' : '-- Select Class --'}</option>
+              {classesList.map(className => (
+                <option key={className} value={className}>{className}</option>
+              ))}
+            </select>
           </div>
           <div className="form-group">
             <label htmlFor="level">Level:</label>
