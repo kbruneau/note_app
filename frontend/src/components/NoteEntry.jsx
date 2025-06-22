@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import apiClient from '../services/apiClient'; // Import apiClient
-import { Link } from 'react-router-dom';
+import { Link, useOutletContext } from 'react-router-dom';
 
 const NoteEntry = () => {
   const [title, setTitle] = useState(''); // Added title state
   const [note, setNote] = useState(''); // 'note' state is for content
   const [response, setResponse] = useState(null);
   const [loading, setLoading] = useState(false);
+  const { addTagNotification } = useOutletContext() || {}; // Get function from context
 
   const submitNote = async () => {
     if (!note.trim()) return; // Content is still required
@@ -20,6 +21,13 @@ const NoteEntry = () => {
       setResponse(res.data); // res.data should contain { note: {id, title, content, ...}, nodes: [] }
       setNote('');
       setTitle(''); // Reset title field
+
+      // Notify about newly created tags from this note
+      if (addTagNotification && res.data.nodes && res.data.nodes.length > 0) {
+        res.data.nodes.forEach(node => {
+          addTagNotification({ name: node.name, type: node.type });
+        });
+      }
     } catch (err) {
       console.error('Error saving note:', err);
       setResponse({ error: 'Failed to save note', message: err.response?.data?.error || err.message });
