@@ -38,7 +38,7 @@ module.exports = (pool) => {
       );
       if (nodeRows.length === 0) {
         await client.query('ROLLBACK'); // Node not found, rollback
-        client.release();
+        // client.release(); // Removed: will be handled by finally
         return res.status(404).json({ error: 'Node not found' });
       }
       const nodeId = nodeRows[0].id;
@@ -50,7 +50,7 @@ module.exports = (pool) => {
       );
       if (notes.length === 0) {
         await client.query('COMMIT'); // No notes to process, commit (or rollback, depending on desired behavior)
-        client.release();
+        // client.release(); // Removed: will be handled by finally
         return res.json({ success: true, mentionsAdded: 0 });
       }
 
@@ -72,7 +72,7 @@ module.exports = (pool) => {
 
       if (newMentions.length === 0) {
         await client.query('COMMIT'); // No new mentions found
-        client.release();
+        // client.release(); // Removed: will be handled by finally
         return res.json({ success: true, mentionsAdded: 0 });
       }
 
@@ -89,7 +89,7 @@ module.exports = (pool) => {
 
       if (filteredMentions.length === 0) {
         await client.query('COMMIT'); // No new mentions to add after filtering
-        client.release();
+        // client.release(); // Removed: will be handled by finally
         return res.json({ success: true, mentionsAdded: 0 });
       }
 
