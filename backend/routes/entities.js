@@ -108,104 +108,185 @@ module.exports = (pool) => {
   });
 
   // Re-tag the same entity everywhere it occurs
-  router.post('/retag-entity-everywhere', authenticateToken, async (req, res) => { // Added authenticateToken
-    const { name, type } = req.body;
-    const userId = req.user.userId; // Get userId
+  router.post('/retag-entity-everywhere', authenticateToken, async (req, res) => {
+    const { name, type: newType, isPlayerCharacter, isPartyMember } = req.body; // 'type' from request is the newType
+    const userId = req.user.userId;
 
-    if (!name || !type) {
-      return res.status(400).json({ error: 'Missing name or type' });
+    if (!name || !newType) {
+      return res.status(400).json({ error: 'Missing name or newType parameters.' });
     }
     if (!userId) {
       return res.status(403).json({ error: 'User ID not found in token.' });
     }
 
-    const client = await pool.connect(); // Acquire client
+    const client = await pool.connect();
     try {
-      await client.query('BEGIN'); // Start transaction
+      await client.query('BEGIN');
 
-      // Step 1: Retrieve node ID (must belong to the user)
-      // Assumes "Note"."nodes" has a user_id column.
-      const { rows: nodeRows } = await client.query(
-        `SELECT id FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2 AND user_id = $3 LIMIT 1 FOR UPDATE`,
-        [name, type, userId]
+      // Step 1: Find or Create the Target Node for (name, newType, userId)
+      let targetNodeId;
+      let targetNodeIsNew = false;
+      const targetNodeSelectRes = await client.query(
+        `SELECT id FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND type = $2 AND user_id = $3`,
+        [name, newType, userId]
       );
-      if (nodeRows.length === 0) {
-        await client.query('ROLLBACK');
-        return res.status(404).json({ error: 'Node not found or not owned by user.' });
-      }
-      const nodeId = nodeRows[0].id;
 
-      // Step 2: Get all relevant notes belonging to the user using Full-Text Search
-      // "Note"."notes" table has user_id.
+      if (targetNodeSelectRes.rows.length > 0) {
+        targetNodeId = targetNodeSelectRes.rows[0].id;
+        // If target node exists and newType is PERSON, update its PC/PM flags if provided and different
+        if (newType === 'PERSON') {
+          const existingFlagsRes = await client.query(
+            `SELECT is_player_character, is_party_member FROM "Note"."nodes" WHERE id = $1 AND user_id = $2`,
+            [targetNodeId, userId]
+          );
+          if (existingFlagsRes.rows.length > 0) { // Should be true
+            const currentIsPC = existingFlagsRes.rows[0].is_player_character;
+            const currentIsPM = existingFlagsRes.rows[0].is_party_member;
+            const updatePC = isPlayerCharacter !== undefined ? !!isPlayerCharacter : currentIsPC;
+            const updatePM = isPartyMember !== undefined ? !!isPartyMember : currentIsPM;
+
+            if (updatePC !== currentIsPC || updatePM !== currentIsPM) {
+              await client.query(
+                `UPDATE "Note"."nodes" SET is_player_character = $1, is_party_member = $2, updated_at = CURRENT_TIMESTAMP
+                 WHERE id = $3 AND user_id = $4`,
+                [updatePC, updatePM, targetNodeId, userId]
+              );
+            }
+          }
+        }
+      } else {
+        // Target node doesn't exist, create it
+        const pcFlag = newType === 'PERSON' ? (isPlayerCharacter !== undefined ? !!isPlayerCharacter : false) : false;
+        const pmFlag = newType === 'PERSON' ? (isPartyMember !== undefined ? !!isPartyMember : false) : false;
+        const createNodeRes = await client.query(
+          `INSERT INTO "Note"."nodes" (name, type, user_id, is_player_character, is_party_member)
+           VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+          [name, newType, userId, pcFlag, pmFlag]
+        );
+        targetNodeId = createNodeRes.rows[0].id;
+        targetNodeIsNew = true;
+      }
+
+      // Step 2: Find Obsolete Node IDs (same name, same user, different type)
+      const obsoleteNodesRes = await client.query(
+        `SELECT id FROM "Note"."nodes"
+         WHERE LOWER(name) = LOWER($1) AND user_id = $2 AND type != $3`,
+        [name, userId, newType]
+      );
+      const obsoleteNodeIds = obsoleteNodesRes.rows.map(row => row.id);
+
+      let mentionsReassignedCount = 0;
+      if (obsoleteNodeIds.length > 0) {
+        // Step 3: Re-attribute mentions from obsolete nodes to the target node.
+        // This updates existing mentions that pointed to an obsolete node to now point to the target node.
+        // It avoids creating a duplicate if a mention for the target node already exists at the same text span.
+        const updateMentionsRes = await client.query(
+          `UPDATE "Note"."note_mentions" AS nm
+           SET node_id = $1, mention_type = $2
+           FROM "Note"."notes" AS n
+           WHERE nm.node_id = ANY($3::int[]) -- Any of the obsolete node IDs
+             AND nm.note_id = n.id
+             AND n.user_id = $4            -- Only in notes owned by the user
+             AND NOT EXISTS (              -- Prevent update if a mention for targetNodeId already exists at this exact spot
+               SELECT 1 FROM "Note"."note_mentions" nm_conflict
+               WHERE nm_conflict.note_id = nm.note_id
+                 AND nm_conflict.start_pos = nm.start_pos
+                 AND nm_conflict.end_pos = nm.end_pos
+                 AND nm_conflict.node_id = $1 -- targetNodeId
+             )
+           RETURNING nm.id`, // Return IDs of updated mentions
+          [targetNodeId, newType, obsoleteNodeIds, userId]
+        );
+        mentionsReassignedCount = updateMentionsRes.rowCount;
+
+        // Now, delete any remaining mentions that pointed to obsolete nodes.
+        // These are mentions that were NOT updated because a targetNodeId mention already existed at their position.
+        await client.query(
+          `DELETE FROM "Note"."note_mentions" AS nm
+           USING "Note"."notes" AS n
+           WHERE nm.node_id = ANY($1::int[]) -- Any of the obsolete node IDs
+             AND nm.note_id = n.id
+             AND n.user_id = $2`,           // Only in notes owned by the user
+          [obsoleteNodeIds, userId]
+        );
+      }
+
+      // Step 4: Add new mentions for the targetNodeId for any text occurrences not yet linked to THIS targetNodeId.
       const { rows: notes } = await client.query(
         `SELECT id, content FROM "Note"."notes" WHERE content_tsv @@ websearch_to_tsquery('english', $1) AND user_id = $2`,
         [name, userId]
       );
-      if (notes.length === 0) {
-        await client.query('COMMIT');
-        return res.json({ success: true, mentionsAdded: 0 });
-      }
 
-      // Step 3: Match words (No DB interaction, so outside explicit transaction steps if complex)
-      const safeName = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      const regex = new RegExp(`\\b${safeName}\\b`, 'gi');
+      let newMentionsCreatedCount = 0;
+      if (notes.length > 0) {
+        const safeNameRegex = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const regex = new RegExp(`\\b${safeNameRegex}\\b`, 'gi');
+        const mentionsToInsert = [];
 
-      const newMentions = [];
-      for (const note of notes) {
-        const matches = [...note.content.matchAll(regex)];
-        for (const match of matches) {
-          newMentions.push({
-            note_id: note.id,
-            start_pos: match.index,
-            end_pos: match.index + name.length
+        for (const note of notes) {
+          const matches = [...note.content.matchAll(regex)];
+          for (const match of matches) {
+            mentionsToInsert.push({
+              node_id: targetNodeId,
+              note_id: note.id,
+              start_pos: match.index,
+              end_pos: match.index + name.length,
+              mention_type: newType,
+              source: 'USER_RETAGGED_EVERYWHERE', // Or a more specific source
+              confidence: 1.0
+            });
+          }
+        }
+
+        if (mentionsToInsert.length > 0) {
+          // Use INSERT ... ON CONFLICT DO NOTHING to avoid duplicates if some mentions were already created
+          // for the targetNodeId by other means or by the re-attribution step.
+          // The unique constraint should be on (note_id, node_id, start_pos, end_pos) or similar.
+          // For simplicity, if (note_id, start_pos, end_pos) should be unique per type, this is more complex.
+          // Assuming (note_id, node_id, start_pos, end_pos) as the conflict target.
+          const insertValuesStr = mentionsToInsert
+            .map((_, i) => `($1, $${i * 6 + 2}, $${i * 6 + 3}, $${i * 6 + 4}, $${i * 6 + 5}, $${i * 6 + 6}, $${i * 6 + 7})`)
+            .join(', ');
+          const insertParams = [targetNodeId];
+          mentionsToInsert.forEach(m => {
+            insertParams.push(m.note_id, m.start_pos, m.end_pos, m.mention_type, m.source, m.confidence);
           });
+
+          // Assuming a unique constraint like: UNIQUE (note_id, node_id, start_pos, end_pos)
+          // Or more simply, if a text span should only have one type of tag: UNIQUE (note_id, start_pos, end_pos)
+          // The previous steps should have handled consolidation for the *same text span*.
+          // This step now ensures the targetNodeId is linked to all text spans.
+          const insertNewMentionsRes = await client.query(
+            `INSERT INTO "Note"."note_mentions" (node_id, note_id, start_pos, end_pos, mention_type, source, confidence)
+             VALUES ${insertValuesStr}
+             ON CONFLICT (note_id, node_id, start_pos, end_pos) DO NOTHING`, // Handles if mention already exists for target node
+            insertParams
+          );
+          newMentionsCreatedCount = insertNewMentionsRes.rowCount;
         }
       }
 
-      if (newMentions.length === 0) {
-        await client.query('COMMIT'); // No new mentions found
-        // client.release(); // Removed: will be handled by finally
-        return res.json({ success: true, mentionsAdded: 0 });
+      // Step 5 (Optional but Recommended): Delete obsolete nodes if they have no remaining mentions or other critical links.
+      // This requires checking 'node_links' and 'character_sheets' as well.
+      // For now, this step is omitted to keep the current change focused.
+      if (obsoleteNodeIds.length > 0) {
+        // Example: A more comprehensive check before deleting would be needed.
+        // For now, we are NOT deleting obsolete nodes automatically.
+        console.log(`INFO: Obsolete node IDs found during retag: ${obsoleteNodeIds.join(', ')}. Manual cleanup might be needed.`);
       }
 
-      // Step 4: Get existing mentions for this node
-      const { rows: existing } = await client.query(
-        `SELECT note_id, start_pos, end_pos FROM "Note"."note_mentions" WHERE node_id = $1 FOR UPDATE`, // Added FOR UPDATE
-        [nodeId]
-      );
-      const existingSet = new Set(existing.map(e => `${e.note_id}:${e.start_pos}:${e.end_pos}`));
-
-      const filteredMentions = newMentions.filter(
-        m => !existingSet.has(`${m.note_id}:${m.start_pos}:${m.end_pos}`)
-      );
-
-      if (filteredMentions.length === 0) {
-        await client.query('COMMIT'); // No new mentions to add after filtering
-        // client.release(); // Removed: will be handled by finally
-        return res.json({ success: true, mentionsAdded: 0 });
-      }
-
-      // Step 5: Bulk insert new mentions
-      const insertValues = filteredMentions
-        .map((_, i) => `($1, $${i * 4 + 2}, $${i * 4 + 3}, $${i * 4 + 4}, $${i * 4 + 5})`)
-        .join(', ');
-      const insertParams = [nodeId];
-      filteredMentions.forEach(m => {
-        insertParams.push(m.note_id, m.start_pos, m.end_pos, type);
+      await client.query('COMMIT');
+      res.json({
+        success: true,
+        message: `Entity '${name}' re-tagged as '${newType}'. ${mentionsReassignedCount} mentions reassigned. ${newMentionsCreatedCount} new mentions created/confirmed.`,
+        targetNodeId: targetNodeId,
+        targetNodeIsNew: targetNodeIsNew,
+        mentionsReassigned: mentionsReassignedCount,
+        newMentionsCreated: newMentionsCreatedCount
       });
-
-      await client.query(
-        `INSERT INTO "Note"."note_mentions" (node_id, note_id, start_pos, end_pos, mention_type)
-         VALUES ${insertValues}`,
-        insertParams
-      );
-
-      await client.query('COMMIT'); // Commit successful transaction
-      res.json({ success: true, mentionsAdded: filteredMentions.length });
     } catch (err) {
-      await client.query('ROLLBACK'); // Rollback on any error
-      console.error('🔥 Retag error:', err);
-      res.status(500).json({ error: 'Server error', message: err.message });
+      await client.query('ROLLBACK');
+      console.error('🔥 Retag entity everywhere error:', err);
     } finally {
       if (client) {
         client.release(); // Release client
