@@ -837,3 +837,11 @@ select {
 .logout-button:hover {
   background-color: var(--accent-color-primary); /* Darker on hover */
 }
+
+.pc-details-sidebar {
+  font-size: 0.8em;       /* Smaller font size */
+  font-style: italic;     /* Italicized */
+  color: #555;           /* Slightly muted color */
+  margin-left: 6px;       /* Space after the hyphen */
+  font-weight: normal;    /* Ensure it's not bold like the h4 might be */
+}

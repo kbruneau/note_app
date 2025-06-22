@@ -35,7 +35,7 @@ const EditNotePage = () => {
 
   return (
     <div className="form-page-container"> {/* Applied class */}
-      <h2>Edit Note</h2>
+      <h2>Edit Your Note</h2>
       <form onSubmit={handleSubmit}>
         <div className="form-group"> {/* Added for spacing */}
           <label htmlFor="title">Title:</label>
@@ -57,7 +57,7 @@ const EditNotePage = () => {
           />
         </div>
         <div className="button-row"> {/* Added for button alignment */}
-          <button type="submit">Save Changes</button>
+          <button type="submit">Save Your Changes</button>
           <button type="button" className="button-secondary" onClick={() => navigate(-1)}>Cancel</button>
         </div>
       </form>

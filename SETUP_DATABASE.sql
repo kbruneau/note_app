@@ -212,8 +212,44 @@ CREATE TABLE IF NOT EXISTS "Note"."nodes" (
     source TEXT,
     tags TEXT[],
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    is_player_character BOOLEAN DEFAULT FALSE,
+    is_party_member BOOLEAN DEFAULT FALSE
 );
+
+-- Conditionally add is_player_character column to Note.nodes if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'Note'
+        AND table_name = 'nodes'
+        AND column_name = 'is_player_character'
+    ) THEN
+        ALTER TABLE "Note"."nodes" ADD COLUMN is_player_character BOOLEAN DEFAULT FALSE;
+        RAISE NOTICE 'Column is_player_character added to Note.nodes table.';
+    ELSE
+        RAISE NOTICE 'Column is_player_character already exists in Note.nodes table.';
+    END IF;
+END $$;
+
+-- Conditionally add is_party_member column to Note.nodes if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'Note'
+        AND table_name = 'nodes'
+        AND column_name = 'is_party_member'
+    ) THEN
+        ALTER TABLE "Note"."nodes" ADD COLUMN is_party_member BOOLEAN DEFAULT FALSE;
+        RAISE NOTICE 'Column is_party_member added to Note.nodes table.';
+    ELSE
+        RAISE NOTICE 'Column is_party_member already exists in Note.nodes table.';
+    END IF;
+END $$;
 
 -- Conditionally add name column to Note.nodes if it doesn't exist
 DO $$
@@ -357,6 +393,8 @@ COMMENT ON COLUMN "Note"."nodes"."sub_type" IS 'A more specific category (e.g., 
 COMMENT ON COLUMN "Note"."nodes"."description" IS 'A brief description or summary of the node.';
 COMMENT ON COLUMN "Note"."nodes"."source" IS 'Where this node information originated from.';
 COMMENT ON COLUMN "Note"."nodes"."tags" IS 'Arbitrary tags for filtering and organization.';
+COMMENT ON COLUMN "Note"."nodes"."is_player_character" IS 'Flag indicating if a PERSON node is a player character.';
+COMMENT ON COLUMN "Note"."nodes"."is_party_member" IS 'Flag indicating if a PERSON node is a party member.';
 
 
 CREATE TABLE IF NOT EXISTS "Note"."note_mentions" (
@@ -869,6 +907,64 @@ END $$;
 COMMENT ON COLUMN "Note"."tagging_corrections"."mention_id" IS 'ID of the mention in Note.note_mentions if this correction pertains to an existing mention. NULL if a new mention was added by user or if original mention was deleted.';
 COMMENT ON COLUMN "Note"."tagging_corrections"."correction_action" IS 'Type of correction: MODIFY_TYPE, MODIFY_SPAN, CONFIRM_TAG, DELETE_TAG, ADD_TAG, etc.';
 
+CREATE TABLE IF NOT EXISTS "Note"."character_sheets" (
+    node_id INTEGER PRIMARY KEY, -- FK constraint added below
+    race_id INTEGER,             -- FK constraint added below
+    main_class TEXT,
+    level INTEGER DEFAULT 1,
+    background_id INTEGER,       -- FK constraint added below
+    alignment TEXT,
+    experience_points INTEGER DEFAULT 0,
+    player_name TEXT,
+    created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Add FK constraint for node_id separately to ensure it's named if needed later
+ALTER TABLE "Note"."character_sheets" DROP CONSTRAINT IF EXISTS fk_character_sheet_node;
+ALTER TABLE "Note"."character_sheets" ADD CONSTRAINT fk_character_sheet_node
+    FOREIGN KEY (node_id) REFERENCES "Note"."nodes"(id) ON DELETE CASCADE;
+
+-- Add FK constraint for race_id
+ALTER TABLE "Note"."character_sheets" DROP CONSTRAINT IF EXISTS fk_character_sheet_race;
+ALTER TABLE "Note"."character_sheets" ADD CONSTRAINT fk_character_sheet_race
+    FOREIGN KEY (race_id) REFERENCES race.races(id) ON DELETE SET NULL ON UPDATE CASCADE;
+
+-- Add FK constraint for background_id
+ALTER TABLE "Note"."character_sheets" DROP CONSTRAINT IF EXISTS fk_character_sheet_background;
+ALTER TABLE "Note"."character_sheets" ADD CONSTRAINT fk_character_sheet_background
+    FOREIGN KEY (background_id) REFERENCES background.backgrounds(id) ON DELETE SET NULL ON UPDATE CASCADE;
+
+
+COMMENT ON TABLE "Note"."character_sheets" IS 'Stores detailed character sheet information linked to a node.';
+COMMENT ON COLUMN "Note"."character_sheets"."node_id" IS 'Link to the character node in Note.nodes.';
+COMMENT ON COLUMN "Note"."character_sheets"."race_id" IS 'FK to race.races table.';
+COMMENT ON COLUMN "Note"."character_sheets"."main_class" IS 'Primary class name of the character (e.g., Fighter, Wizard).';
+COMMENT ON COLUMN "Note"."character_sheets"."level" IS 'Character level.';
+COMMENT ON COLUMN "Note"."character_sheets"."background_id" IS 'FK to background.backgrounds table.';
+COMMENT ON COLUMN "Note"."character_sheets"."alignment" IS 'Character alignment.';
+COMMENT ON COLUMN "Note"."character_sheets"."experience_points" IS 'Character experience points.';
+COMMENT ON COLUMN "Note"."character_sheets"."player_name" IS 'Name of the player playing the character.';
+COMMENT ON COLUMN "Note"."character_sheets"."created_at" IS 'Timestamp of when the character sheet was created.';
+COMMENT ON COLUMN "Note"."character_sheets"."updated_at" IS 'Timestamp of when the character sheet was last updated.';
+
+-- Trigger function to automatically update updated_at timestamp
+CREATE OR REPLACE FUNCTION "Note".update_modified_column()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ language 'plpgsql';
+
+-- Apply the trigger to Note.character_sheets
+-- Ensure this trigger name is unique or drop existing if re-applying to other tables with same name
+DROP TRIGGER IF EXISTS character_sheets_updated_at_trigger ON "Note"."character_sheets";
+CREATE TRIGGER character_sheets_updated_at_trigger
+BEFORE UPDATE ON "Note"."character_sheets"
+FOR EACH ROW
+EXECUTE FUNCTION "Note".update_modified_column();
+
 
 -- Schema: DM
 CREATE TABLE IF NOT EXISTS "DM"."bestiarys" (
@@ -1079,7 +1175,7 @@ CREATE TABLE IF NOT EXISTS "class"."classes" (
 CREATE INDEX IF NOT EXISTS notes_content_tsv_idx ON "Note"."notes" USING GIN(content_tsv);
 
 -- Create or replace the trigger function
-CREATE OR REPLACE FUNCTION tsvector_update_trigger_function()
+CREATE OR REPLACE FUNCTION "Note".tsvector_update_trigger_function()
 RETURNS TRIGGER AS $$
 BEGIN
   NEW.content_tsv := to_tsvector('english', COALESCE(NEW.content,'') || ' ' || COALESCE(NEW.title,''));
@@ -1091,7 +1187,7 @@ $$ LANGUAGE plpgsql;
 DROP TRIGGER IF EXISTS notes_tsv_update_trigger ON "Note"."notes";
 CREATE TRIGGER notes_tsv_update_trigger
 BEFORE INSERT OR UPDATE ON "Note"."notes"
-FOR EACH ROW EXECUTE FUNCTION tsvector_update_trigger_function();
+FOR EACH ROW EXECUTE FUNCTION "Note".tsvector_update_trigger_function();
 
 -- Comment: To populate existing rows, run this manually after setup:
 -- UPDATE "Note"."notes" SET content_tsv = to_tsvector('english', COALESCE(content,'') || ' ' || COALESCE(title,''));

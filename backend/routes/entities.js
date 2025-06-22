@@ -8,7 +8,7 @@ module.exports = (pool) => {
     const type = req.params.type;
     try {
       const { rows } = await pool.query(`
-        SELECT id, name, type, sub_type, source, created_at, array_to_json(tags) AS tags
+        SELECT id, name, type, sub_type, source, created_at, array_to_json(tags) AS tags, is_player_character, is_party_member
         FROM "Note"."nodes"
         WHERE type = $1
         ORDER BY name
@@ -17,6 +17,73 @@ module.exports = (pool) => {
     } catch (err) {
       console.error('Error fetching entities by type:', err);
       res.status(500).json({ error: 'Failed to fetch entities' });
+    }
+  });
+
+  // GET detailed player character information, including last known location
+  router.get('/entities/player-characters-detailed', async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const query = `
+        WITH PCMentionsInNotes AS (
+            SELECT
+                pc_node.id AS pc_id,
+                n.id AS note_id,
+                n.created_at AS note_created_at
+            FROM "Note"."nodes" pc_node
+            JOIN "Note"."note_mentions" pc_mention ON pc_node.id = pc_mention.node_id
+            JOIN "Note"."notes" n ON pc_mention.note_id = n.id
+            WHERE pc_node.is_player_character = TRUE
+        ),
+        RankedPCNotes AS (
+            SELECT
+                pc_id,
+                note_id,
+                note_created_at,
+                ROW_NUMBER() OVER (PARTITION BY pc_id ORDER BY note_created_at DESC, note_id DESC) as rn
+            FROM PCMentionsInNotes
+        ),
+        LatestPCNoteLocationMentions AS (
+            SELECT
+                rpn.pc_id,
+                loc_mention.node_id AS location_id,
+                loc_node.name AS location_name,
+                ROW_NUMBER() OVER (PARTITION BY rpn.pc_id ORDER BY loc_mention.id ASC) as loc_rn
+            FROM RankedPCNotes rpn
+            JOIN "Note"."note_mentions" loc_mention ON rpn.note_id = loc_mention.note_id
+            JOIN "Note"."nodes" loc_node ON loc_mention.node_id = loc_node.id
+            WHERE rpn.rn = 1 AND loc_node.type = 'LOCATION'
+        )
+        SELECT
+            pc_main.id,
+            pc_main.name,
+            pc_main.type,
+            pc_main.sub_type,
+            pc_main.is_player_character,
+            pc_main.is_party_member,
+            array_to_json(pc_main.tags) AS tags,
+            cs.main_class,
+            r.name AS race_name,
+            lpl.location_id,
+            lpl.location_name
+        FROM "Note"."nodes" pc_main
+        LEFT JOIN "Note"."character_sheets" cs ON pc_main.id = cs.node_id
+        LEFT JOIN "race"."races" r ON cs.race_id = r.id
+        LEFT JOIN (
+            SELECT * FROM LatestPCNoteLocationMentions WHERE loc_rn = 1
+        ) lpl ON pc_main.id = lpl.pc_id
+        WHERE pc_main.is_player_character = TRUE
+        ORDER BY pc_main.name;
+      `;
+      const { rows } = await client.query(query);
+      res.json(rows);
+    } catch (err) {
+      console.error('Error fetching detailed player characters:', err);
+      res.status(500).json({ error: 'Failed to fetch detailed player characters', message: err.message });
+    } finally {
+      if (client) {
+        client.release();
+      }
     }
   });
 
@@ -38,7 +105,7 @@ module.exports = (pool) => {
       );
       if (nodeRows.length === 0) {
         await client.query('ROLLBACK'); // Node not found, rollback
-        client.release();
+        // client.release(); // Removed: will be handled by finally
         return res.status(404).json({ error: 'Node not found' });
       }
       const nodeId = nodeRows[0].id;
@@ -50,7 +117,7 @@ module.exports = (pool) => {
       );
       if (notes.length === 0) {
         await client.query('COMMIT'); // No notes to process, commit (or rollback, depending on desired behavior)
-        client.release();
+        // client.release(); // Removed: will be handled by finally
         return res.json({ success: true, mentionsAdded: 0 });
       }
 
@@ -72,7 +139,7 @@ module.exports = (pool) => {
 
       if (newMentions.length === 0) {
         await client.query('COMMIT'); // No new mentions found
-        client.release();
+        // client.release(); // Removed: will be handled by finally
         return res.json({ success: true, mentionsAdded: 0 });
       }
 
@@ -89,7 +156,7 @@ module.exports = (pool) => {
 
       if (filteredMentions.length === 0) {
         await client.query('COMMIT'); // No new mentions to add after filtering
-        client.release();
+        // client.release(); // Removed: will be handled by finally
         return res.json({ success: true, mentionsAdded: 0 });
       }
 

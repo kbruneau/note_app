@@ -281,55 +281,79 @@ const NodePage = () => {
             ) : (
               <>
                 <a href={`/?tab=${node.type}`} className="entity-link">{formatType(node.type)}</a>
-                <button onClick={() => setIsEditingType(true)} className="button">Change</button>
+                <button onClick={() => setIsEditingType(true)} className="button">Change Type</button>
+                {node.is_player_character && (
+                  <Link to={`/node/${nodeId}/sheet`} className="button button-secondary" style={{ marginLeft: '10px' }}>
+                    Character Sheet
+                  </Link>
+                )}
               </>
             )}
           </p>
 
-          <h3>Mentions in Notes</h3>
+          <h3>Where This Appears in Your Notes</h3>
           <ul style={{ listStyle: 'none', padding: 0 }}>
-            {mentions.map((m) => (
-              <li key={m.id} className="mention-entry" style={getMentionStyle(m)}>
+            {mentions.map((mentionGroup) => (
+              // Use note_id as key for the list item representing the note
+              <li key={mentionGroup.note_id} className="mention-entry" style={getMentionStyle(mentionGroup)}>
                 <div className="entity-meta">
                   <span>
-                    In Note <Link to={`/#note-${m.note_id}`}>#{m.note_id}</Link>:
-                    Type: {formatType(m.mention_type)} ({formatMentionSource(m.source, m.confidence)})
+                    In Note <Link to={`/#note-${mentionGroup.note_id}`}>#{mentionGroup.note_id}</Link>
+                    {mentionGroup.note_title && ` ("${mentionGroup.note_title}")`}:
+                    Tagged as: {formatType(mentionGroup.representative_mention_type)} ({formatMentionSource(mentionGroup.representative_source, mentionGroup.representative_confidence)})
+                    {mentionGroup.mention_count > 1 && <em style={{marginLeft: '10px'}}>({mentionGroup.mention_count} mentions in this note)</em>}
                   </span>
                   <div className="mention-actions">
-                    {!['USER_CONFIRMED', 'USER_ADDED', 'PHRASEMATCHER_EXACT', 'USER_MODIFIED'].includes(m.source) && (
+                    {/* Actions now target the representative_mention_id */}
+                    {!['USER_CONFIRMED', 'USER_ADDED', 'PHRASEMATCHER_EXACT', 'USER_MODIFIED'].includes(mentionGroup.representative_source) && (
                       <button
-                        onClick={() => handleQuickConfirm(m.id)}
+                        onClick={() => handleQuickConfirm(mentionGroup.representative_mention_id)}
                         className="button-icon button-quick-confirm"
-                        title="Quick Confirm Tag"
+                        title="Confirm This Tag (Representative)"
                       > ✔️ </button>
                     )}
                     <button
-                      onClick={() => handleOpenEditModal(m)}
+                      // Pass the whole group, modal might need to adapt or use representative parts
+                      onClick={() => handleOpenEditModal({
+                        id: mentionGroup.representative_mention_id,
+                        note_id: mentionGroup.note_id,
+                        snippet: mentionGroup.snippet, // Snippet of representative mention
+                        mention_type: mentionGroup.representative_mention_type,
+                        source: mentionGroup.representative_source,
+                        confidence: mentionGroup.representative_confidence,
+                        // For editing name, we might need the node's actual current name,
+                        // but the modal currently edits the 'snippet' (mention text segment).
+                        // This part might need more thought if 'editedMentionName' in modal is for node name vs segment.
+                        // For now, assuming modal edits based on the representative mention's details.
+                        node_name: node ? node.name : '', // Pass current node's name for context if needed
+                        start_pos: mentionGroup.representative_start_pos, // Pass representative pos
+                        end_pos: mentionGroup.representative_end_pos
+                       })}
                       className="button-icon"
-                      title="Correct Mention"
+                      title="Edit This Tag (Representative)"
                     > ✏️ </button>
                     <button
-                      onClick={() => navigate(`/notes/${m.note_id}/edit`)}
+                      onClick={() => navigate(`/notes/${mentionGroup.note_id}/edit`)}
                       className="button-icon"
-                      title="Edit Note Content"
+                      title="Edit Full Note Content"
                     > 📝 </button>
                     <button
-                      onClick={() => toggleNote(m.note_id)}
+                      onClick={() => toggleNote(mentionGroup.note_id)}
                       className="button-icon"
-                      title={expandedNotes.includes(m.note_id) ? 'Collapse Note' : 'Expand Note'}
+                      title={expandedNotes.includes(mentionGroup.note_id) ? 'Collapse Note Details' : 'Expand Note Details'}
                     >
-                      {expandedNotes.includes(m.note_id) ? '➖' : '➕'}
+                      {expandedNotes.includes(mentionGroup.note_id) ? '➖' : '➕'}
                     </button>
                   </div>
                 </div>
                 <div
-                  className={`mention-snippet ${expandedNotes.includes(m.note_id) ? 'expanded' : ''}`}
+                  className={`mention-snippet ${expandedNotes.includes(mentionGroup.note_id) ? 'expanded' : ''}`}
                   style={{ clear: 'both', paddingTop: '5px' }}
                 >
                   <em>
-                    {expandedNotes.includes(m.note_id)
-                      ? m.note_content  // Show full content when expanded
-                      : m.snippet || 'Snippet not available.'} {/* Use backend-generated snippet when collapsed */}
+                    {expandedNotes.includes(mentionGroup.note_id)
+                      ? mentionGroup.note_content  // Show full content when expanded
+                      : mentionGroup.snippet || 'Snippet not available.'} {/* Snippet of representative mention */}
                   </em>
                 </div>
               </li>
@@ -337,15 +361,15 @@ const NodePage = () => {
           </ul>
         </>
       ) : (
-        <p>Loading...</p>
+        <p>Loading details...</p>
       )}
 
       {editingMention && (
         <div className="modal-backdrop">
           <div className="modal-content">
-            <h3>Correct Mention</h3>
+            <h3>Edit Tag or Mention</h3>
             <div style={{ marginBottom: '10px' }}>
-              <label htmlFor="editedMentionName" style={{ display: 'block', marginBottom: '5px' }}>Mention Text: </label>
+              <label htmlFor="editedMentionName" style={{ display: 'block', marginBottom: '5px' }}>Mentioned Text: </label>
               <input
                 type="text"
                 id="editedMentionName"
@@ -356,7 +380,7 @@ const NodePage = () => {
             </div>
 
             <div style={{ marginBottom: '10px' }}>
-              <label htmlFor="newMentionType" style={{ display: 'block', marginBottom: '5px' }}>New Type: </label>
+              <label htmlFor="newMentionType" style={{ display: 'block', marginBottom: '5px' }}>New Tag: </label>
               <select
                 id="newMentionType"
                 value={newMentionType}
@@ -368,12 +392,12 @@ const NodePage = () => {
                 ))}
               </select>
             </div>
-            <p><em>Original Type: {formatType(editingMention.mention_type)} (Source: {editingMention.source}, Confidence: {editingMention.confidence?.toFixed(2)})</em></p>
+            <p><em>Original Tag: {formatType(editingMention.mention_type)} (Source: {editingMention.source}, Confidence: {editingMention.confidence?.toFixed(2)})</em></p>
 
 
             <div className="modal-actions">
-              <button onClick={handleSaveCorrection} className="button" disabled={!editedMentionName.trim()}>Save Change</button>
-              <button onClick={handleDeleteMentionInModal} className="button button-danger">Delete Mention</button>
+              <button onClick={handleSaveCorrection} className="button" disabled={!editedMentionName.trim()}>Save Changes</button>
+              <button onClick={handleDeleteMentionInModal} className="button button-danger">Remove This Mention</button>
               <button onClick={handleCloseModal} className="button button-secondary">Cancel</button>
             </div>
           </div>

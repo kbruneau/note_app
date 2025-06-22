@@ -14,7 +14,7 @@ function RegistrationPage() {
     setError(''); // Clear previous errors
 
     if (!username.trim() || !password.trim()) {
-      setError('Username and password cannot be empty.');
+      setError('Please enter a username and password.');
       return;
     }
 
@@ -23,9 +23,9 @@ function RegistrationPage() {
       navigate('/login'); // Redirect to login page on successful registration
     } catch (err) {
       if (err.response && err.response.data && err.response.data.error) {
-        setError(err.response.data.error);
+        setError(err.response.data.error); // Keep specific backend errors
       } else {
-        setError('Registration failed. Please try again.');
+        setError('Registration failed. Please try a different username or try again later.');
       }
       console.error('Registration error:', err);
     }
@@ -33,7 +33,7 @@ function RegistrationPage() {
 
   return (
     <div className="form-page-container">
-      <h2>Register</h2>
+      <h2>Create Your Account</h2>
       <form onSubmit={handleSubmit}>
         {error && <p className="error-message">{error}</p>}
         <div className="form-group">

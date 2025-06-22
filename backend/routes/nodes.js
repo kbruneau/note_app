@@ -12,7 +12,8 @@ module.exports = (pool) => {
   
     try {
       const { rows } = await pool.query(
-        `SELECT * FROM "Note"."nodes" WHERE id = $1`,
+        `SELECT id, name, type, sub_type, description, source, tags, created_at, updated_at, is_player_character, is_party_member
+         FROM "Note"."nodes" WHERE id = $1`,
         [nodeId]
       );
       if (!rows.length) return res.status(404).json({ error: 'Node not found' });
@@ -87,7 +88,8 @@ module.exports = (pool) => {
 
   router.patch('/nodes/:id/type', async (req, res) => {
     const nodeId = parseInt(req.params.id, 10);
-    const { newType } = req.body;
+    // Destructure new flags from body, default to undefined if not provided
+    const { newType, isPlayerCharacter, isPartyMember } = req.body;
     const client = await pool.connect(); // Acquire client
     const nodeA_ID = nodeId; // Renaming for clarity in merge logic (nodeId is NodeA_ID)
   
@@ -193,6 +195,23 @@ module.exports = (pool) => {
           [nodeB_ID]
         );
 
+        // Additional step: If NodeB (target of merge) is PERSON type, update its flags
+        if (newType === 'PERSON') {
+          await client.query(
+            `UPDATE "Note"."nodes"
+             SET is_player_character = $1, is_party_member = $2, updated_at = CURRENT_TIMESTAMP
+             WHERE id = $3`,
+            [
+              isPlayerCharacter === undefined ? false : !!isPlayerCharacter,
+              isPartyMember === undefined ? false : !!isPartyMember,
+              nodeB_ID
+            ]
+          );
+        }
+        // If newType is not PERSON, Node B's flags are presumed to be already FALSE or NULL.
+        // If Node B was previously not PERSON and is now being "targeted" by a merge that implies it's PERSON,
+        // this logic is correct. The newType IS Node B's type.
+
         // 5. Delete Node A
         await client.query(`DELETE FROM "Note"."nodes" WHERE id = $1`, [nodeA_ID]);
 
@@ -205,11 +224,23 @@ module.exports = (pool) => {
         });
 
       } else {
-        // Node B does not exist, just UPDATE Node A's type (original logic)
-        const updateResult = await client.query(
-          `UPDATE "Note"."nodes" SET type = $1 WHERE id = $2`,
-          [newType, nodeA_ID]
-        );
+        // Node B does not exist, just UPDATE Node A's type
+        let updateQuery = `UPDATE "Note"."nodes" SET type = $1, updated_at = CURRENT_TIMESTAMP`;
+        const queryParams = [newType];
+        let paramIdx = 2;
+
+        if (newType === 'PERSON') {
+          updateQuery += `, is_player_character = $${paramIdx++}, is_party_member = $${paramIdx++}`;
+          queryParams.push(isPlayerCharacter === undefined ? false : !!isPlayerCharacter);
+          queryParams.push(isPartyMember === undefined ? false : !!isPartyMember);
+        } else {
+          // If changing to a non-PERSON type, reset flags
+          updateQuery += `, is_player_character = FALSE, is_party_member = FALSE`;
+        }
+        updateQuery += ` WHERE id = $${paramIdx}`;
+        queryParams.push(nodeA_ID);
+
+        const updateResult = await client.query(updateQuery, queryParams);
 
         if (updateResult.rowCount === 0) {
           // This case should ideally be caught by the initial fetch of Node A's name,
@@ -244,46 +275,79 @@ module.exports = (pool) => {
     if (isNaN(nodeId)) return res.status(400).json({ error: 'Invalid node ID' });
   
     try {
-      const { rows } = await pool.query(`
-        SELECT m.*, n.content AS note_content
-        FROM "Note"."note_mentions" m
-        JOIN "Note"."notes" n ON m.note_id = n.id
-        WHERE m.node_id = $1
-        ORDER BY m.note_id DESC
-      `, [nodeId]);
+      const query = `
+        WITH RankedMentions AS (
+            SELECT
+                m.id AS mention_id,
+                m.note_id,
+                n.content AS note_content,
+                n.title AS note_title,
+                m.node_id AS mentioned_node_id,
+                m.mention_type,
+                m.source,
+                m.confidence,
+                m.start_pos,
+                m.end_pos,
+                n.created_at AS note_created_at, -- Added for ordering
+                -- Rank mentions of the specific node within each note to pick a representative one
+                ROW_NUMBER() OVER (PARTITION BY m.note_id ORDER BY m.id ASC) as rn_in_note
+            FROM "Note"."note_mentions" m
+            JOIN "Note"."notes" n ON m.note_id = n.id
+            WHERE m.node_id = $1 -- $1 is the nodeId for the NodePage
+        ),
+        NoteMentionCounts AS (
+            SELECT
+                note_id,
+                COUNT(*) AS mention_count
+            FROM RankedMentions -- Counts all mentions of this node in the note
+            GROUP BY note_id
+        )
+        SELECT
+            rm.note_id,
+            rm.note_content,
+            rm.note_title,
+            rm.mention_id AS representative_mention_id,
+            rm.mention_type AS representative_mention_type,
+            rm.source AS representative_source,
+            rm.confidence AS representative_confidence,
+            rm.start_pos AS representative_start_pos,
+            rm.end_pos AS representative_end_pos,
+            rm.note_created_at, -- Pass through for ordering
+            nmc.mention_count
+        FROM RankedMentions rm
+        JOIN NoteMentionCounts nmc ON rm.note_id = nmc.note_id
+        WHERE rm.rn_in_note = 1 -- Selects only the first/representative mention per note
+        ORDER BY rm.note_created_at DESC, rm.note_id DESC; -- Order notes by creation date
+      `;
+      const { rows } = await pool.query(query, [nodeId]);
   
-      // Add a `snippet` field for each mention with context
-      const mentionsWithContextualSnippets = rows.map(m => {
-        const content = m.note_content || ''; // Ensure content is a string
-        const start = m.start_pos;
-        const end = m.end_pos;
+      const resultsWithSnippets = rows.map(row => {
+        const content = row.note_content || '';
+        const start = row.representative_start_pos; // Use representative start/end
+        const end = row.representative_end_pos;
         let snippet = '';
-        const CONTEXT_CHARS = 50; // Number of characters before and after
+        const CONTEXT_CHARS = 50;
 
         if (typeof start === 'number' && typeof end === 'number' && start >= 0 && end >= start && end <= content.length) {
             const snippetStart = Math.max(0, start - CONTEXT_CHARS);
             const snippetEnd = Math.min(content.length, end + CONTEXT_CHARS);
-
             snippet = content.substring(snippetStart, snippetEnd);
-
-            if (snippetStart > 0) { // Check if text was truncated at the beginning
-                snippet = "... " + snippet;
-            }
-            if (snippetEnd < content.length) { // Check if text was truncated at the end
-                snippet = snippet + " ...";
-            }
+            if (snippetStart > 0) snippet = "... " + snippet;
+            if (snippetEnd < content.length) snippet = snippet + " ...";
         } else {
-            // Fallback if start/end positions are invalid
             snippet = content.substring(0, 100) + (content.length > 100 ? "..." : "");
         }
   
         return {
-          ...m,
-          snippet // This is the new, richer snippet
+          // Keep all fields from the row, which are now structured per note
+          // and include representative mention details and count
+          ...row,
+          id: row.representative_mention_id, // For keying and actions, use the ID of the representative mention
+          snippet
         };
       });
   
-      res.json(mentionsWithContextualSnippets);
+      res.json(resultsWithSnippets);
     } catch (err) {
       console.error(err);
       res.status(500).json({ error: 'Failed to fetch mentions', message: err.message });
@@ -294,10 +358,11 @@ module.exports = (pool) => {
     const name = req.params.name;
     try {
       const { rows } = await pool.query(
-        `SELECT * FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+        `SELECT id, name, type, sub_type, description, source, tags, created_at, updated_at, is_player_character, is_party_member
+         FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) LIMIT 1`,
         [name]
       );
-      if (rows.length === 0) return res.status(404).json({});
+      if (rows.length === 0) return res.status(404).json({}); // Return empty object for 404 as per existing logic
       res.json(rows[0]);
     } catch (err) {
       console.error(err);

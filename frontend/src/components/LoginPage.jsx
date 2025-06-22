@@ -14,7 +14,7 @@ function LoginPage() {
     setError(''); // Clear previous errors
 
     if (!username.trim() || !password.trim()) {
-      setError('Username and password cannot be empty.');
+      setError('Please enter your username and password.');
       return;
     }
 
@@ -27,13 +27,13 @@ function LoginPage() {
         }
         navigate('/'); // Redirect to home page on successful login
       } else {
-        setError('Login failed: No token received.');
+        setError('Login failed. Please try again.');
       }
     } catch (err) {
       if (err.response && err.response.data && err.response.data.error) {
-        setError(err.response.data.error);
+        setError(err.response.data.error); // Keep specific backend errors
       } else {
-        setError('Login failed. Please check your credentials or try again later.');
+        setError('Login failed. Please check your username and password, or try again later.');
       }
       console.error('Login error:', err);
     }
@@ -41,7 +41,7 @@ function LoginPage() {
 
   return (
     <div className="form-page-container">
-      <h2>Login</h2>
+      <h2>Log In to Your Account</h2>
       <form onSubmit={handleSubmit}>
         {error && <p className="error-message">{error}</p>}
         <div className="form-group">
@@ -69,7 +69,7 @@ function LoginPage() {
         </div>
       </form>
       <p style={{ textAlign: 'center', marginTop: '1rem' }}>
-        Don't have an account? <Link to="/register">Sign Up</Link>
+        New here? <Link to="/register">Create an Account</Link>
       </p>
     </div>
   );
