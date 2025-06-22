@@ -463,7 +463,9 @@ module.exports = (pool) => {
       name_segment, // Required: Text of the new mention
       type,         // Required: Entity type for the new mention
       start_pos,    // Required: Start position
-      end_pos       // Required: End position
+      end_pos,      // Required: End position
+      isPlayerCharacter, // Optional: For PERSON type
+      isPartyMember      // Optional: For PERSON type
     } = req.body;
 
     if (!name_segment || !type || start_pos === undefined || end_pos === undefined) {
@@ -495,11 +497,31 @@ module.exports = (pool) => {
 
       if (existingNodeRes.rows.length > 0) {
         final_node_id = existingNodeRes.rows[0].id;
+        // If node exists and is PERSON, potentially update its flags?
+        // For now, this endpoint primarily adds a mention. Node updates are better via node-specific endpoints.
+        // However, if this is the *first* time it's tagged as PC/PM, it should happen here.
+        // This needs careful thought: if a node 'PERSON' 'Kyle' exists, and this mention add says he's a PC,
+        // should it update the central Note.nodes.is_player_character? Yes.
+        if (type === 'PERSON') {
+          await client.query(
+            `UPDATE "Note"."nodes" SET
+              is_player_character = COALESCE($1, is_player_character, false),
+              is_party_member = COALESCE($2, is_party_member, false),
+              updated_at = CURRENT_TIMESTAMP
+             WHERE id = $3`,
+            [isPlayerCharacter, isPartyMember, final_node_id]
+          );
+        }
       } else {
-        const newNodeRes = await client.query(
-          `INSERT INTO "Note"."nodes" (name, type) VALUES ($1, $2) RETURNING id`,
-          [name_segment, type]
-        );
+        // Node does not exist, create it
+        let insertQuery = `INSERT INTO "Note"."nodes" (name, type, is_player_character, is_party_member) VALUES ($1, $2, $3, $4) RETURNING id`;
+        let queryParams = [
+          name_segment,
+          type,
+          type === 'PERSON' ? !!isPlayerCharacter : false, // SQL boolean false
+          type === 'PERSON' ? !!isPartyMember : false    // SQL boolean false
+        ];
+        const newNodeRes = await client.query(insertQuery, queryParams);
         final_node_id = newNodeRes.rows[0].id;
       }
 

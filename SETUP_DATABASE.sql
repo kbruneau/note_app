@@ -212,8 +212,44 @@ CREATE TABLE IF NOT EXISTS "Note"."nodes" (
     source TEXT,
     tags TEXT[],
     created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    is_player_character BOOLEAN DEFAULT FALSE,
+    is_party_member BOOLEAN DEFAULT FALSE
 );
+
+-- Conditionally add is_player_character column to Note.nodes if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'Note'
+        AND table_name = 'nodes'
+        AND column_name = 'is_player_character'
+    ) THEN
+        ALTER TABLE "Note"."nodes" ADD COLUMN is_player_character BOOLEAN DEFAULT FALSE;
+        RAISE NOTICE 'Column is_player_character added to Note.nodes table.';
+    ELSE
+        RAISE NOTICE 'Column is_player_character already exists in Note.nodes table.';
+    END IF;
+END $$;
+
+-- Conditionally add is_party_member column to Note.nodes if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM information_schema.columns
+        WHERE table_schema = 'Note'
+        AND table_name = 'nodes'
+        AND column_name = 'is_party_member'
+    ) THEN
+        ALTER TABLE "Note"."nodes" ADD COLUMN is_party_member BOOLEAN DEFAULT FALSE;
+        RAISE NOTICE 'Column is_party_member added to Note.nodes table.';
+    ELSE
+        RAISE NOTICE 'Column is_party_member already exists in Note.nodes table.';
+    END IF;
+END $$;
 
 -- Conditionally add name column to Note.nodes if it doesn't exist
 DO $$
@@ -357,6 +393,8 @@ COMMENT ON COLUMN "Note"."nodes"."sub_type" IS 'A more specific category (e.g., 
 COMMENT ON COLUMN "Note"."nodes"."description" IS 'A brief description or summary of the node.';
 COMMENT ON COLUMN "Note"."nodes"."source" IS 'Where this node information originated from.';
 COMMENT ON COLUMN "Note"."nodes"."tags" IS 'Arbitrary tags for filtering and organization.';
+COMMENT ON COLUMN "Note"."nodes"."is_player_character" IS 'Flag indicating if a PERSON node is a player character.';
+COMMENT ON COLUMN "Note"."nodes"."is_party_member" IS 'Flag indicating if a PERSON node is a party member.';
 
 
 CREATE TABLE IF NOT EXISTS "Note"."note_mentions" (

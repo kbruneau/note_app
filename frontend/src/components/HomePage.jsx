@@ -126,10 +126,23 @@ const HomePage = () => {
       setExistingNode(nodeData);
       if (nodeData) {
         setFabSelectedTag(nodeData.type); // Initialize with existing node's type
+        if (nodeData.type === 'PERSON') {
+          setIsPlayerCharacter(nodeData.is_player_character || false);
+          setIsPartyMember(nodeData.is_party_member || false);
+        } else {
+          setIsPlayerCharacter(false); // Reset if not person
+          setIsPartyMember(false);    // Reset if not person
+        }
+      } else {
+        // No existing node, fabSelectedTag remains default (likely ''), checkboxes default to false
+        setIsPlayerCharacter(false);
+        setIsPartyMember(false);
       }
     } catch {
       setExistingNode(null);
-      // fabSelectedTag remains '' or its default if no existing node
+      setFabSelectedTag(''); // Explicitly reset if API call fails
+      setIsPlayerCharacter(false);
+      setIsPartyMember(false);
     }
   };
 
@@ -145,14 +158,20 @@ const HomePage = () => {
       return;
     }
     try {
-      // Add the mention to the specific note
-      await apiClient.post(`/notes/${selectedNoteId}/mentions/add`, {
+      const payload = {
         name_segment: selection.text,
-        type: fabSelectedTag, // Use the new state for selected tag
+        type: fabSelectedTag,
         start_pos: selection.start,
-        end_pos: selection.end
-        // PlayerCharacter/PartyMember info not sent to backend for now as per plan (Option A)
-      });
+        end_pos: selection.end,
+      };
+
+      if (fabSelectedTag === 'PERSON') {
+        payload.isPlayerCharacter = isPlayerCharacter;
+        payload.isPartyMember = isPartyMember;
+      }
+
+      // Add the mention to the specific note
+      await apiClient.post(`/notes/${selectedNoteId}/mentions/add`, payload);
 
       // Retag this entity everywhere with the selected type
       // This ensures consistency if this entity name was previously tagged differently elsewhere
