@@ -898,8 +898,8 @@ select {
 .notifications-dropdown {
   position: absolute;
   top: 100%; /* Position below the bell */
-  left: auto; /* Ensure left doesn't interfere */
-  right: 100%; /* Align dropdown's right edge with parent's (bell-area) left edge */
+  left: auto; /* Allow it to be positioned by right */
+  right: 0; /* Align dropdown's right edge with parent's (bell-area) right edge */
   background-color: var(--container-bg-opaque);
   border: 1px solid var(--border-color);
   border-radius: 6px;
