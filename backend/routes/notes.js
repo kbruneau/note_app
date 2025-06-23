@@ -584,7 +584,7 @@ module.exports = (pool) => {
       res.status(201).json({
         success: true,
         message: "Mention added successfully",
-        new_mention: new_mention_record
+        new_mention: final_mention_record // Corrected variable name
       });
 
     } catch (err) {
