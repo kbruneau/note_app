@@ -538,11 +538,33 @@ module.exports = (pool) => {
         `INSERT INTO "Note"."note_mentions" (
           node_id, note_id, start_pos, end_pos, mention_type, source, confidence
         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-        RETURNING *`, // Return the newly created mention
+        ON CONFLICT (note_id, node_id, start_pos, end_pos) DO NOTHING
+        RETURNING *`, // Return the newly created mention or existing if conflict and DO UPDATE was used
         [final_node_id, noteId, start_pos, end_pos, type, 'USER_ADDED', 1.0]
       );
-      const new_mention_record = newMentionRes.rows[0];
-      const new_mention_id = new_mention_record.id;
+
+      // If ON CONFLICT DO NOTHING, newMentionRes.rows might be empty if there was a conflict.
+      // We need to fetch the mention if it already existed or was just inserted.
+      let final_mention_record;
+      if (newMentionRes.rows.length > 0) {
+        final_mention_record = newMentionRes.rows[0];
+      } else {
+        // Conflict occurred, row was not inserted. Fetch the existing one.
+        const existingMentionRes = await client.query(
+          `SELECT * FROM "Note"."note_mentions"
+           WHERE note_id = $1 AND node_id = $2 AND start_pos = $3 AND end_pos = $4`,
+          [noteId, final_node_id, start_pos, end_pos]
+        );
+        if (existingMentionRes.rows.length > 0) {
+          final_mention_record = existingMentionRes.rows[0];
+        } else {
+          // This case should be rare: conflict prevented insert, but then select failed.
+          // Could happen if another transaction deleted it in between.
+          await client.query('ROLLBACK');
+          return res.status(500).json({ error: "Failed to retrieve mention after ON CONFLICT clause." });
+        }
+      }
+      const new_mention_id = final_mention_record.id;
 
       // Step 3: Log to Note.tagging_corrections
       await client.query(
