@@ -407,6 +407,25 @@ select {
   border-color: red;
 }
 
+.button-remove-sidebar-flag {
+  font-size: 0.8rem;
+  padding: 0.2em 0.5em;
+  background-color: #f0e6d2; /* Light tan, similar to container */
+  color: var(--accent-color-secondary); /* Brown text */
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  margin-left: 0.5rem; /* Space from the text */
+  flex-shrink: 0; /* Prevent shrinking if space is tight */
+  box-shadow: none;
+}
+
+.button-remove-sidebar-flag:hover {
+  background-color: var(--accent-color-secondary);
+  color: white;
+  border-color: var(--accent-color-primary);
+}
+
 
 /* === Entity Tags (General) === */
 .tag {
@@ -830,13 +849,106 @@ select {
   cursor: pointer;
   font-family: var(--font-family-headings);
   font-size: 0.9rem;
-  margin-left: 1rem; /* Space it from other navbar items */
+  /* margin-left: 1rem; */ /* Removed, spacing handled by header-actions gap */
   transition: background-color 0.2s ease;
 }
 
 .logout-button:hover {
   background-color: var(--accent-color-primary); /* Darker on hover */
 }
+
+/* Header Actions & Notification Bell */
+.header-actions {
+  display: flex;
+  align-items: center;
+  margin-left: auto; /* Pushes actions to the right of the navbar */
+  gap: 1rem; /* Creates space between logout button and bell area */
+}
+
+.notification-bell-area {
+  position: relative;
+  /* margin-right: 1rem; */ /* Removed, spacing handled by header-actions gap */
+}
+
+.notification-bell {
+  font-size: 1.5rem; /* Larger bell icon */
+  padding: 0.2em 0.4em;
+  position: relative; /* For badge positioning */
+  color: var(--text-color-main); /* Thematic color for the bell icon */
+}
+
+.notification-bell:hover, .notification-bell:focus {
+  color: var(--accent-color-primary); /* Darken on hover, similar to other icons */
+  background-color: rgba(0,0,0,0.03); /* Slight background on hover */
+}
+
+.notification-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  background-color: red;
+  color: white;
+  border-radius: 50%;
+  padding: 0.1em 0.4em;
+  font-size: 0.75rem;
+  font-weight: bold;
+  border: 1px solid white;
+}
+
+.notifications-dropdown {
+  position: absolute;
+  top: 100%; /* Position below the bell */
+  left: 0; /* Align dropdown's left edge with parent's (bell-area) left edge */
+  right: auto; /* Allow it to be positioned by left */
+  background-color: var(--container-bg-opaque);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+  padding: 1rem;
+  width: 280px; /* Fixed width */
+  z-index: 1010; /* Ensure it's above other content */
+  max-height: 300px; /* Max height before scrolling */
+  overflow-y: auto; /* Scroll if content exceeds max height */
+}
+
+.notifications-dropdown h4 {
+  margin-top: 0;
+  margin-bottom: 0.75rem;
+  font-family: var(--font-family-cinzel);
+  color: var(--text-color-headers);
+  font-size: 1.1rem;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.5rem;
+}
+
+.notifications-dropdown ul {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem 0;
+}
+
+.notifications-dropdown li {
+  padding: 0.4rem 0;
+  font-size: 0.9rem;
+  border-bottom: 1px dotted var(--border-color);
+}
+.notifications-dropdown li:last-child {
+  border-bottom: none;
+}
+
+.notifications-dropdown .button-small { /* For the clear button */
+  font-size: 0.8rem;
+  padding: 0.3em 0.8em;
+  width: 100%;
+  margin-right: 0; /* Override default button margin */
+}
+.notifications-dropdown p { /* For "No new tags" message */
+  font-size: 0.9rem;
+  color: var(--text-color-main);
+  text-align: center;
+  margin: 0.5rem 0;
+}
+
 
 .pc-details-sidebar {
   font-size: 0.8em;       /* Smaller font size */

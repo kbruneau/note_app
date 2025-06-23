@@ -224,28 +224,28 @@ def _process_ner_entities(doc, current_nlp, mention_details):
                 mention_details[key] = (text_content, original_ner_label, source, confidence)
     return mention_details
 
-def _get_or_create_node(cur, normalized_name, label, node_cache):
-    """Fetches a node ID from cache or DB, or creates a new node if it doesn't exist."""
+def _get_or_create_node(cur, normalized_name, label, user_id, node_cache): # Added user_id
+    """Fetches a node ID from cache or DB, or creates a new node if it doesn't exist for the user."""
     is_new = False
-    cache_key = (normalized_name, label)
+    cache_key = (normalized_name, label, user_id) # Added user_id to cache key
 
     if cache_key in node_cache:
         node_id_val = node_cache[cache_key]
     else:
         cur.execute("""
             SELECT id FROM "Note"."nodes"
-            WHERE LOWER(name) = LOWER(%s) AND type = %s
-        """, (normalized_name, label))
+            WHERE LOWER(name) = LOWER(%s) AND type = %s AND user_id = %s
+        """, (normalized_name, label, user_id)) # Added user_id to query
         row = cur.fetchone()
 
         if row:
             node_id_val = row[0]
         else:
             cur.execute("""
-                INSERT INTO "Note"."nodes" (name, type)
-                VALUES (%s, %s)
+                INSERT INTO "Note"."nodes" (name, type, user_id)
+                VALUES (%s, %s, %s)
                 RETURNING id
-            """, (normalized_name, label))
+            """, (normalized_name, label, user_id)) # Added user_id to insert
             node_id_val = cur.fetchone()[0]
             is_new = True
         node_cache[cache_key] = node_id_val
@@ -292,7 +292,7 @@ def _relate_entities_to_location(cur, tagged_nodes_with_details, note_id):
 
 
 # === Main tagging function (refactored) ===
-def tag_text(text, note_id, db_connection, current_nlp, current_matcher):
+def tag_text(text, note_id, user_id, db_connection, current_nlp, current_matcher): # Added user_id
     """
     Main function to tag text, identify entities, and store them in the database.
     Uses helper functions to structure the process.
@@ -320,7 +320,8 @@ def tag_text(text, note_id, db_connection, current_nlp, current_matcher):
         # 3. Get or create nodes and insert mentions
         for (start_pos, end_pos), (name, label, source, confidence) in mention_details.items():
             normalized_name = name.strip()
-            node_id_val, is_new = _get_or_create_node(cur, normalized_name, label, node_cache)
+            # Pass user_id to _get_or_create_node
+            node_id_val, is_new = _get_or_create_node(cur, normalized_name, label, user_id, node_cache)
 
             tagged_nodes_for_return.append({
                 "id": node_id_val, "name": normalized_name, "type": label,
@@ -357,11 +358,17 @@ def handle_tag_request():
     db_conn = None
     try:
         data = request.get_json()
-        if not data or 'text' not in data or 'note_id' not in data:
-            return jsonify({"error": "Missing text or note_id in request"}), 400
+        if not data or 'text' not in data or 'note_id' not in data or 'user_id' not in data: # Added user_id check
+            return jsonify({"error": "Missing text, note_id, or user_id in request"}), 400
 
         text = data['text']
         note_id = int(data['note_id'])
+        user_id = data['user_id'] # Extract user_id
+
+        # Validate user_id (basic check, could be more robust if needed)
+        if not isinstance(user_id, int) or user_id <= 0:
+            return jsonify({"error": "Invalid user_id format or value"}), 400
+
         db_conn = get_db_connection()
 
         # The re-initialization logic is removed as per requirements.
@@ -369,7 +376,7 @@ def handle_tag_request():
         # If matcher was somehow None despite MATCHER_INITIALIZED being true,
         # tag_text itself would raise an error, which is handled by the generic Exception block.
 
-        tagged_results = tag_text(text, note_id, db_conn, nlp, matcher)
+        tagged_results = tag_text(text, note_id, user_id, db_conn, nlp, matcher) # Pass user_id
         db_conn.commit()
         return jsonify(tagged_results)
 

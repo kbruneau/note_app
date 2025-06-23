@@ -18,9 +18,31 @@ const MainLayout = () => {
   const [partyMembers, setPartyMembers] = useState([]);
   const [pcSortMode, setPcSortMode] = useState('current'); // 'current', 'az', 'za'
   const [partySortMode, setPartySortMode] = useState('current'); // 'current', 'az', 'za'
+  const [newlyCreatedTags, setNewlyCreatedTags] = useState([]);
+  const [showTagNotifications, setShowTagNotifications] = useState(false);
 
   const navigate = useNavigate();
   const location = useLocation();
+
+  const addTagNotification = (tagInfo) => {
+    // Avoid duplicates if the same tag is somehow added multiple times quickly
+    setNewlyCreatedTags(prevTags => {
+      if (!prevTags.find(t => t.name === tagInfo.name && t.type === tagInfo.type)) {
+        return [...prevTags, tagInfo];
+      }
+      return prevTags;
+    });
+    // setShowTagNotifications(true); // Show immediately or let user click bell? Let user click.
+  };
+
+  const clearTagNotifications = () => {
+    setNewlyCreatedTags([]);
+    setShowTagNotifications(false);
+  };
+
+  const toggleTagNotifications = () => {
+    setShowTagNotifications(prev => !prev);
+  };
 
   const fetchCharacters = async () => {
     try {
@@ -151,12 +173,39 @@ const MainLayout = () => {
             </button>
           ))}
         </nav>
-        <button onClick={handleLogout} className="logout-button">Logout</button>
+        <div className="header-actions">
+          <button onClick={handleLogout} className="logout-button">Logout</button>
+          <div className="notification-bell-area">
+            <button onClick={toggleTagNotifications} className="button-icon notification-bell" title="Show new tags">
+              🔔
+              {newlyCreatedTags.length > 0 && (
+                <span className="notification-badge">{newlyCreatedTags.length}</span>
+              )}
+            </button>
+            {showTagNotifications && newlyCreatedTags.length > 0 && (
+              <div className="notifications-dropdown">
+                <h4>Newly Created Tags:</h4>
+                <ul>
+                  {newlyCreatedTags.map((tag, index) => (
+                    <li key={index}>{tag.name} ({tag.type})</li>
+                  ))}
+                </ul>
+                <button onClick={clearTagNotifications} className="button button-small">Clear Notifications</button>
+              </div>
+            )}
+             {showTagNotifications && newlyCreatedTags.length === 0 && (
+              <div className="notifications-dropdown">
+                <p>No new tags yet in this session.</p>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       <div className="app-content-area"> {/* Second child of app-container, flex-direction: row */}
         <div className="app-wrapper"> {/* First child of app-content-area, for Outlet */}
-          <Outlet />
+          {/* Pass addTagNotification to child components rendered by Outlet */}
+          <Outlet context={{ addTagNotification }} />
         </div>
 
         <div className="pc-sidebar"> {/* Second child of app-content-area */}
@@ -194,9 +243,9 @@ const MainLayout = () => {
               </div>
               <button
                 onClick={() => handleRemoveSidebarFlag(pc.id, "is_player_character")}
-                className="button-icon button-remove-sidebar-tag"
+                className="button-text button-remove-sidebar-flag"
                 title="Remove from Player Characters"
-              >×</button>
+              >Remove</button>
             </div>
           )) : <p>No Player Characters found.</p>}
 
@@ -219,9 +268,9 @@ const MainLayout = () => {
               </div>
               <button
                 onClick={() => handleRemoveSidebarFlag(member.id, "is_party_member")}
-                className="button-icon button-remove-sidebar-tag"
+                className="button-text button-remove-sidebar-flag"
                 title="Remove from Party Members"
-              >×</button>
+              >Remove</button>
             </div>
           )) : <p>No Party Members found.</p>}
         </div>

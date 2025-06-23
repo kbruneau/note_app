@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import apiClient from '../services/apiClient';
 import '../App.css';
-import { useLocation, useParams } from 'react-router-dom';
+import { useLocation, useParams, useOutletContext } from 'react-router-dom';
 
 const entityTypesForTagging = ['PERSON', 'LOCATION', 'ITEM', 'SPELL', 'MONSTER', 'OTHER'];
 
 const HomePage = () => {
   const { entityType } = useParams();
   const location = useLocation();
+  const { addTagNotification } = useOutletContext() || {}; // Get function from context
 
   const currentTypeName = useMemo(() => {
     if (!entityType) return 'Notes';
@@ -191,6 +192,11 @@ const HomePage = () => {
       // but /retag-entity-everywhere should handle backend consistency.
       // For now, a page refresh or re-navigating might show changes, or rely on existing data fetching.
 
+      // Notify about the newly confirmed/created tag
+      if (addTagNotification) {
+        addTagNotification({ name: selection.text, type: fabSelectedTag });
+      }
+
     } catch (err) {
       console.error('Failed to save FAB changes:', err);
       alert('Error saving tag. Check console. ' + (err.response?.data?.error || err.message));
@@ -277,6 +283,13 @@ const HomePage = () => {
       setNewNoteContent('');
       setShowNewNoteForm(false);
       window.scrollTo({ top: 0, behavior: 'smooth' });
+
+      // Notify about newly created tags from this note
+      if (addTagNotification && res.data.nodes && res.data.nodes.length > 0) {
+        res.data.nodes.forEach(node => {
+          addTagNotification({ name: node.name, type: node.type });
+        });
+      }
     } catch (err) {
       console.error('Failed to submit new note:', err);
       alert('Error submitting new note: ' + (err.response?.data?.error || err.message));
@@ -394,7 +407,7 @@ const HomePage = () => {
 
           {existingNode && (
             <p style={{ fontSize: '0.9em', margin: '0.5rem 0' }}>
-              This text is already tagged as: <strong>{existingNode.name}</strong> (Type: {existingNode.type}, Node ID: {existingNode.id}). You can change the tag or details below.
+              This text is already tagged as: <strong>{existingNode.name}</strong> (Type: {existingNode.type}). You can change the tag or details below.
             </p>
           )}
           {!existingNode && (

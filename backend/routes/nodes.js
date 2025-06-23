@@ -1,22 +1,30 @@
 const express = require('express');
 
+const authenticateToken = require('../utils/authenticateToken'); // Added for user ID
+
 module.exports = (pool) => {
   const router = express.Router();
 
   // GET node by ID
-  router.get('/nodes/:nodeId', async (req, res) => {
-    const nodeId = parseInt(req.params.nodeId, 10); // ✅ Moved up
+  router.get('/nodes/:nodeId', authenticateToken, async (req, res) => { // Added authenticateToken
+    const nodeId = parseInt(req.params.nodeId, 10);
+    const userId = req.user.userId; // Get userId
+
     if (isNaN(nodeId)) {
       return res.status(400).json({ error: 'Invalid node ID' });
     }
+    if (!userId) {
+      return res.status(403).json({ error: 'User ID not found in token.' });
+    }
   
     try {
+      // This query assumes "Note"."nodes" table has a user_id column.
       const { rows } = await pool.query(
         `SELECT id, name, type, sub_type, description, source, tags, created_at, updated_at, is_player_character, is_party_member
-         FROM "Note"."nodes" WHERE id = $1`,
-        [nodeId]
+         FROM "Note"."nodes" WHERE id = $1 AND user_id = $2`,
+        [nodeId, userId]
       );
-      if (!rows.length) return res.status(404).json({ error: 'Node not found' });
+      if (!rows.length) return res.status(404).json({ error: 'Node not found or not owned by user.' });
       res.json(rows[0]);
     } catch (err) {
       res.status(500).json({ error: 'Server error', message: err.message });
@@ -24,9 +32,11 @@ module.exports = (pool) => {
   });
 
   // Remove a specific tag from a node
-  router.delete('/nodes/:nodeId/tags', async (req, res) => {
+  // For deleting tags, we must ensure the user owns the node.
+  router.delete('/nodes/:nodeId/tags', authenticateToken, async (req, res) => { // Added authenticateToken
     const { nodeId: nodeIdParam } = req.params;
     const nodeId = parseInt(nodeIdParam, 10);
+    const userId = req.user.userId; // Get userId
     const { tag_to_remove } = req.body;
 
     if (isNaN(nodeId)) {
@@ -40,14 +50,16 @@ module.exports = (pool) => {
     try {
       await client.query('BEGIN');
 
+      // Check ownership of the node
+      // This query assumes "Note"."nodes" table has a user_id column.
       const nodeRes = await client.query(
-        `SELECT id, name, tags FROM "Note"."nodes" WHERE id = $1 FOR UPDATE`,
-        [nodeId]
+        `SELECT id, name, tags FROM "Note"."nodes" WHERE id = $1 AND user_id = $2 FOR UPDATE`,
+        [nodeId, userId]
       );
 
       if (nodeRes.rows.length === 0) {
         await client.query('ROLLBACK');
-        return res.status(404).json({ error: 'Node not found.' });
+        return res.status(404).json({ error: 'Node not found or not owned by user.' });
       }
 
       const currentNode = nodeRes.rows[0];
@@ -86,40 +98,46 @@ module.exports = (pool) => {
     }
   });
 
-  router.patch('/nodes/:id/type', async (req, res) => {
+  router.patch('/nodes/:id/type', authenticateToken, async (req, res) => { // Added authenticateToken
     const nodeId = parseInt(req.params.id, 10);
-    // Destructure new flags from body, default to undefined if not provided
+    const userId = req.user.userId; // Get userId
     const { newType, isPlayerCharacter, isPartyMember } = req.body;
-    const client = await pool.connect(); // Acquire client
-    const nodeA_ID = nodeId; // Renaming for clarity in merge logic (nodeId is NodeA_ID)
+
+    if (isNaN(nodeId)) return res.status(400).json({ error: "Invalid node ID."});
+    if (!userId) return res.status(403).json({ error: 'User ID not found in token.' });
+    if (!newType) return res.status(400).json({ error: "newType is required."});
+
+    const client = await pool.connect();
+    const nodeA_ID = nodeId;
   
     try {
-      await client.query('BEGIN'); // Start transaction
+      await client.query('BEGIN');
 
-      // Get Node A's current name. We need this to find Node B.
-      // Lock Node A for the duration of the transaction.
+      // Get Node A's current name and verify ownership. Lock Node A.
+      // Assumes "Note"."nodes" has user_id column.
       const nodeARes = await client.query(
-        `SELECT name FROM "Note"."nodes" WHERE id = $1 FOR UPDATE`,
-        [nodeA_ID]
+        `SELECT name FROM "Note"."nodes" WHERE id = $1 AND user_id = $2 FOR UPDATE`,
+        [nodeA_ID, userId]
       );
       if (nodeARes.rows.length === 0) {
         await client.query('ROLLBACK');
-        return res.status(404).json({ error: 'Node to update (Node A) not found.' });
+        return res.status(404).json({ error: 'Node to update (Node A) not found or not owned by user.' });
       }
       const nodeA_Name = nodeARes.rows[0].name;
 
-      // Check if Node B (target for merge) exists: same name (case-insensitive) as Node A, but with the newType.
-      // Lock Node B as well if it exists.
+      // Check if Node B (target for merge) exists for this user: same name, newType. Lock Node B.
+      // Assumes "Note"."nodes" has user_id column.
       const nodeBRes = await client.query(`
         SELECT id FROM "Note"."nodes"
         WHERE id != $1
           AND LOWER(name) = LOWER($2)
           AND type = $3
+          AND user_id = $4
         FOR UPDATE
-      `, [nodeA_ID, nodeA_Name, newType]);
+      `, [nodeA_ID, nodeA_Name, newType, userId]);
   
       if (nodeBRes.rows.length > 0) {
-        // Node B exists, proceed with MERGE logic
+        // Node B exists for this user, proceed with MERGE logic
         const nodeB_ID = nodeBRes.rows[0].id;
 
         // 1. Update Note.note_mentions
@@ -270,11 +288,26 @@ module.exports = (pool) => {
   
 
   // GET all notes that mention this node (and other nodes mentioned with it)
-  router.get('/nodes/:id/mentions', async (req, res) => {
+  router.get('/nodes/:id/mentions', authenticateToken, async (req, res) => { // Added authenticateToken
     const nodeId = parseInt(req.params.id, 10);
+    const userId = req.user.userId; // Get userId
+
     if (isNaN(nodeId)) return res.status(400).json({ error: 'Invalid node ID' });
-  
+    if (!userId) return res.status(403).json({ error: 'User ID not found in token.' });
+
     try {
+      // First, check if the user owns the primary node.
+      // This query assumes "Note"."nodes" table has a user_id column.
+      const nodeCheck = await pool.query(
+        `SELECT id FROM "Note"."nodes" WHERE id = $1 AND user_id = $2`,
+        [nodeId, userId]
+      );
+      if (nodeCheck.rows.length === 0) {
+        return res.status(404).json({ error: 'Node not found or not owned by user.' });
+      }
+
+      // If node is owned, proceed to get mentions from user's notes.
+      // This query assumes "Note"."notes" table has a user_id column (which it does).
       const query = `
         WITH RankedMentions AS (
             SELECT
@@ -293,7 +326,7 @@ module.exports = (pool) => {
                 ROW_NUMBER() OVER (PARTITION BY m.note_id ORDER BY m.id ASC) as rn_in_note
             FROM "Note"."note_mentions" m
             JOIN "Note"."notes" n ON m.note_id = n.id
-            WHERE m.node_id = $1 -- $1 is the nodeId for the NodePage
+            WHERE m.node_id = $1 AND n.user_id = $2 -- $1 is nodeId, $2 is userId
         ),
         NoteMentionCounts AS (
             SELECT
@@ -319,7 +352,7 @@ module.exports = (pool) => {
         WHERE rm.rn_in_note = 1 -- Selects only the first/representative mention per note
         ORDER BY rm.note_created_at DESC, rm.note_id DESC; -- Order notes by creation date
       `;
-      const { rows } = await pool.query(query, [nodeId]);
+      const { rows } = await pool.query(query, [nodeId, userId]); // Added userId as parameter
   
       const resultsWithSnippets = rows.map(row => {
         const content = row.note_content || '';
@@ -354,15 +387,22 @@ module.exports = (pool) => {
     }
   });
 
-  router.get('/nodes/by-name/:name', async (req, res) => {
+  router.get('/nodes/by-name/:name', authenticateToken, async (req, res) => { // Added authenticateToken
     const name = req.params.name;
+    const userId = req.user.userId; // Get userId
+
+    if (!userId) {
+      return res.status(403).json({ error: 'User ID not found in token.' });
+    }
+
     try {
+      // This query assumes "Note"."nodes" table has a user_id column.
       const { rows } = await pool.query(
         `SELECT id, name, type, sub_type, description, source, tags, created_at, updated_at, is_player_character, is_party_member
-         FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) LIMIT 1`,
-        [name]
+         FROM "Note"."nodes" WHERE LOWER(name) = LOWER($1) AND user_id = $2 LIMIT 1`,
+        [name, userId]
       );
-      if (rows.length === 0) return res.status(404).json({}); // Return empty object for 404 as per existing logic
+      if (rows.length === 0) return res.status(404).json({}); // Node not found or not owned by user
       res.json(rows[0]);
     } catch (err) {
       console.error(err);

@@ -12,14 +12,26 @@ module.exports = (pool) => {
   // This might need refinement based on actual ownership/permission model.
   const checkNodeIsPC = async (req, res, next) => {
     const nodeId = parseInt(req.params.nodeId, 10);
+    const userId = req.user ? req.user.userId : null; // Get userId from authenticated token if available
+
     if (isNaN(nodeId)) {
       return res.status(400).json({ error: 'Invalid node ID format.' });
     }
+    if (!userId) {
+      // This should ideally be caught by authenticateToken middleware if it's applied before this,
+      // but as a safeguard if this middleware is ever used without it.
+      return res.status(401).json({ error: 'User not authenticated.' });
+    }
 
     try {
-      const nodeRes = await pool.query('SELECT id, is_player_character FROM "Note"."nodes" WHERE id = $1', [nodeId]);
+      // Assumes "Note"."nodes" has a user_id column.
+      // Check if node exists AND belongs to the user.
+      const nodeRes = await pool.query(
+        'SELECT id, is_player_character FROM "Note"."nodes" WHERE id = $1 AND user_id = $2',
+        [nodeId, userId]
+      );
       if (nodeRes.rows.length === 0) {
-        return res.status(404).json({ error: 'Character node not found.' });
+        return res.status(404).json({ error: 'Character node not found or not owned by user.' });
       }
       // Optional: Enforce that a sheet can only be for a PC.
       // if (nodeRes.rows[0].is_player_character !== true) {
@@ -36,21 +48,33 @@ module.exports = (pool) => {
   // GET character sheet for a node
   router.get('/:nodeId/character-sheet', authenticateToken, checkNodeIsPC, async (req, res) => {
     const { nodeId } = req; // nodeId from checkNodeIsPC middleware
+    const userId = req.user.userId; // Get userId from authenticated token
+
+    if (!userId) {
+      return res.status(403).json({ error: 'User ID not found in token.' });
+    }
+
     try {
+      // This query assumes "Note"."nodes" table has a user_id column.
+      // It fetches the character sheet only if the associated node belongs to the user.
       const query = `
         SELECT
           cs.*,
           r.name AS race_name,
           b.name AS background_name
         FROM "Note"."character_sheets" cs
+        JOIN "Note"."nodes" n ON cs.node_id = n.id
         LEFT JOIN "race"."races" r ON cs.race_id = r.id
         LEFT JOIN "background"."backgrounds" b ON cs.background_id = b.id
-        WHERE cs.node_id = $1
+        WHERE cs.node_id = $1 AND n.user_id = $2
       `;
-      const result = await pool.query(query, [nodeId]);
+      const result = await pool.query(query, [nodeId, userId]);
 
       if (result.rows.length === 0) {
-        return res.status(200).json({}); // No sheet found, return empty object
+        // Could be no sheet, or node not found/not owned.
+        // To differentiate, we can check node ownership first, but checkNodeIsPC doesn't do that yet.
+        // For now, returning {} is consistent with "no sheet found for this user for this node".
+        return res.status(200).json({});
       }
       res.json(result.rows[0]);
     } catch (err) {
@@ -62,6 +86,11 @@ module.exports = (pool) => {
   // PUT (Create/Update) character sheet for a node
   router.put('/:nodeId/character-sheet', authenticateToken, checkNodeIsPC, async (req, res) => {
     const { nodeId } = req; // nodeId from checkNodeIsPC middleware
+    const userId = req.user.userId; // Get userId from authenticated token
+
+    if (!userId) {
+      return res.status(403).json({ error: 'User ID not found in token.' });
+    }
     const {
       race_id, // Now expecting race_id
       main_class,
